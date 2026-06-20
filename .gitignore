@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+.env
+
+# Modal
+.modal/
+
+# Generated fixtures / checkpoints (pulled from the Modal volume; large, reproducible)
+fixtures/
+*.pt
+*.ckpt
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
