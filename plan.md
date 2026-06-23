@@ -59,6 +59,10 @@ Detect and attribute *what* moved between consecutive checkpoints, from weights 
     eviction boundary is dominated by this slot-inheritance discontinuity, not training (fixture:
     re-admitted id ~155x the survivor-median ‖Δ‖). The diff must gather by id AND treat
     insert/evict/re-admit spans as comparability breaks, not learning signal.
+  - **Admission lags feeding** — an id fed in interval N can become resident only at the next
+    checkpoint (validated: ckpt-1 insertions include ids from ckpt-0's fed set, not ckpt-1's).
+    So churn timing is offset ~one interval from the data; a future event-log "why" join must
+    account for this lag rather than aligning churn to the exact step.
 
 ### Cross-cutting technique (portable asset)
 Noise-floor / null calibration: report drift in units of an instrument noise floor,
