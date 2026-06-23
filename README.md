@@ -7,6 +7,18 @@ See [`plan.md`](plan.md) for the design and scope.
 v1 target: **dynamic managed-collision embedding tables** (recsys / TorchRec MCH-ZCH),
 where the diff is an id-keyed join over checkpoints rather than a row-index subtract.
 
+## Development
+
+Managed with [uv](https://docs.astral.sh/uv/) (Python 3.12, pinned in `.python-version`):
+
+```bash
+uv sync                 # create .venv and install deps + dev group
+uv run pytest -q        # unit tests (add nothing) / integration (needs fixtures/)
+uv run ruff check .
+uv run scripts/run_diff.py        # diff a downloaded trajectory
+uv run scripts/mutation_demo.py   # detection-power demo
+```
+
 ## Reference fixtures
 
 flamediff diffs *consecutive* checkpoints, so we develop against a generated

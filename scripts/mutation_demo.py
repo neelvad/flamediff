@@ -1,7 +1,7 @@
 """Detection-power demo: inject a known corruption into a real checkpoint and show the diff
 catches it above the natural-drift noise floor.
 
-    .venv/bin/python scripts/mutation_demo.py [run_dir]
+    uv run scripts/mutation_demo.py [run_dir]
 """
 from __future__ import annotations
 

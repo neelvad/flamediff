@@ -7,10 +7,10 @@ name = "flamediff"
 version = "0.0.1"
 description = "Structural drift diffing for model checkpoints (recsys managed-collision embedding tables)"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.12"
 dependencies = ["torch>=2.0", "numpy>=1.24"]
 
-[project.optional-dependencies]
+[dependency-groups]
 dev = ["pytest>=7", "ruff>=0.4"]
 
 [tool.setuptools.packages.find]
@@ -24,7 +24,7 @@ markers = [
 
 [tool.ruff]
 line-length = 100
-target-version = "py39"
+target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]

@@ -5,7 +5,7 @@ counts, churn across checkpoints, re-admission, and why an id-keyed gather is
 required instead of a row-index subtract).
 
 Run with the local CPU-torch venv:
-    .venv/bin/python scripts/inspect_fixtures.py [run_dir]
+    uv run scripts/inspect_fixtures.py [run_dir]
 """
 import sys
 
@@ -33,7 +33,7 @@ def id_to_slot(c):
     delim = int(b["_delimiter"].item())
     raw, slot = b["_mch_sorted_raw_ids"], b["_mch_remapped_ids_mapping"]
     occ = raw != delim
-    return {int(r): int(s) for r, s in zip(raw[occ].tolist(), slot[occ].tolist())}
+    return {int(r): int(s) for r, s in zip(raw[occ].tolist(), slot[occ].tolist(), strict=True)}
 
 
 # 1) buffer layout + scalars at ckpt 0

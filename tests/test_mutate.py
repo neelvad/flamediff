@@ -43,7 +43,7 @@ def test_mutation_isolation(make_table):
     mutated, _ = mutate_table(cur, kind="zero", ids=injected)
     d = diff_table(cur, mutated)
 
-    moved = {int(i) for i, dn in zip(d.surv_ids, d.delta_norm) if dn > 0}
+    moved = {int(i) for i, dn in zip(d.surv_ids, d.delta_norm, strict=True) if dn > 0}
     assert moved == set(injected.tolist())
 
 

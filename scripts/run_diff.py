@@ -1,6 +1,6 @@
 """Walk a generated trajectory and print a per-step structural diff report.
 
-    .venv/bin/python scripts/run_diff.py [run_dir]
+    uv run scripts/run_diff.py [run_dir]
 
 This is the "see it work" driver: it runs the real adapter + diff over consecutive
 checkpoints and surfaces churn, geometry drift, and the top frequency-residual movers.
