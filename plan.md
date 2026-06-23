@@ -46,6 +46,20 @@ Detect and attribute *what* moved between consecutive checkpoints, from weights 
   (3) per-id access/frequency count [nice-to-have, often in eviction metadata], (4) generation/
   admission stamp [nice-to-have, for re-admission filtering]. (3)/(4) degrade gracefully.
 
+  **Confirmed serialization (TorchRec 1.0.0, `MCHManagedCollisionModule`), per table — validated
+  against a generated fixture via `scripts/inspect_fixtures.py`:**
+  - id→slot map = two parallel int64 arrays: `_mch_sorted_raw_ids` (raw ids, sorted asc, empty
+    slots = `_delimiter` = INT64_MAX) and `_mch_remapped_ids_mapping` (slot per raw id). Clean
+    ZCH — one slot per id, no collisions.
+  - `_mch_counts` `[zch_size]` = LFU access count per entry == the frequency normalizer, for free.
+  - `_current_iter_tensor`, `_mch_slots`, `_delimiter`, `_output_segments_tensor` = scalars/meta.
+  - weights at state_dict key `_embedding_module.embeddings.{table}.weight` `[zch_size, dim]`.
+  - **Eviction does NOT reset the embedding** — a reused slot keeps its vector, so a newly
+    admitted / re-admitted id *inherits* the prior occupant's embedding. Per-id Δ across an
+    eviction boundary is dominated by this slot-inheritance discontinuity, not training (fixture:
+    re-admitted id ~155x the survivor-median ‖Δ‖). The diff must gather by id AND treat
+    insert/evict/re-admit spans as comparability breaks, not learning signal.
+
 ### Cross-cutting technique (portable asset)
 Noise-floor / null calibration: report drift in units of an instrument noise floor,
 z-score against a resampled null, apply look-elsewhere corrections. Reused everywhere.
