@@ -59,7 +59,7 @@ class Cfg:
     steps_per_ckpt = 50
     batch_size = 1024
     eviction_interval = 20  # MCH evicts every N forward calls (low -> churn within each ckpt)
-    lr = 0.1
+    lr = 0.1  # stable; higher (e.g. 1.0) diverges to NaN with this SGD + linear-head setup
     seed = 0
     # Per-checkpoint offset of the Zipfian "hot" region. Shifting it forces eviction of
     # now-cold ids and admission of newly-hot ids. ckpt 3 revisits ckpt 0's region and
@@ -93,12 +93,12 @@ def generate() -> str:
     # [CONFIRM] managed-collision API surface (paths/args may shift across versions)
     from torchrec.modules.embedding_configs import EmbeddingConfig
     from torchrec.modules.embedding_modules import EmbeddingCollection
+    from torchrec.modules.mc_embedding_modules import ManagedCollisionEmbeddingCollection
     from torchrec.modules.mc_modules import (
         LFU_EvictionPolicy,
         ManagedCollisionCollection,
         MCHManagedCollisionModule,
     )
-    from torchrec.modules.mc_embedding_modules import ManagedCollisionEmbeddingCollection
     from torchrec.sparse.jagged_tensor import KeyedJaggedTensor
 
     rng = np.random.default_rng(cfg.seed)
@@ -187,7 +187,7 @@ def generate() -> str:
                        "config": {k: v for k, v in vars(Cfg).items()
                                   if not k.startswith("_")}}, fh, indent=2)
         if idx == 0:
-            print(f"[discovery] state_dict keys:\n  " +
+            print("[discovery] state_dict keys:\n  " +
                   "\n  ".join(model.state_dict().keys()))
             print(f"[discovery] MCH buffer layout:\n{json.dumps(summary, indent=2)}")
         return ckpt_dir

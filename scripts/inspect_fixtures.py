@@ -7,7 +7,6 @@ required instead of a row-index subtract).
 Run with the local CPU-torch venv:
     .venv/bin/python scripts/inspect_fixtures.py [run_dir]
 """
-import json
 import sys
 
 import torch
@@ -66,7 +65,7 @@ print("[churn] id-keyed survivors / inserted / evicted per step:")
 maps = [id_to_slot(c) for c in range(NCKPT)]
 for c in range(1, NCKPT):
     a, b = set(maps[c - 1]), set(maps[c])
-    print(f"   {c-1}->{c}: survivors={len(a & b):5d}  inserted={len(b - a):5d}  evicted={len(a - b):5d}")
+    print(f"   {c-1}->{c}: survivors={len(a & b)}  inserted={len(b - a)}  evicted={len(a - b)}")
 
 # 4) re-admission: present@0, gone somewhere in the middle, back@3 (offset-0 revisit)
 present = {i: [i in maps[c] for c in range(NCKPT)] for i in maps[0]}
