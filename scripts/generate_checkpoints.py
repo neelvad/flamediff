@@ -58,7 +58,7 @@ class Cfg:
     num_checkpoints = 6
     steps_per_ckpt = 50
     batch_size = 1024
-    eviction_interval = 100  # MCH evicts every N forward calls
+    eviction_interval = 20  # MCH evicts every N forward calls (low -> churn within each ckpt)
     lr = 0.1
     seed = 0
     # Per-checkpoint offset of the Zipfian "hot" region. Shifting it forces eviction of
@@ -116,8 +116,10 @@ def generate() -> str:
     ]
     ec = EmbeddingCollection(tables=embedding_configs, device=device)
 
+    # NB: ManagedCollisionCollection is keyed by *table name* (EmbeddingConfig.name),
+    # not feature name -- it cross-checks every embedding table has an mc module.
     mc_modules = {
-        f: MCHManagedCollisionModule(  # [CONFIRM] arg names
+        f"{f}_emb": MCHManagedCollisionModule(
             zch_size=cfg.zch_size,
             device=device,
             input_hash_size=cfg.raw_vocab,
@@ -126,7 +128,7 @@ def generate() -> str:
         )
         for f in cfg.features
     }
-    mcc = ManagedCollisionCollection(  # [CONFIRM] arg names
+    mcc = ManagedCollisionCollection(
         managed_collision_modules=mc_modules,
         embedding_configs=embedding_configs,
     )
@@ -168,11 +170,11 @@ def generate() -> str:
 
         # the MCH buffers ARE the id->slot map + eviction metadata the parser reads
         mch_state, summary = {}, {}
-        for f, m in mc_modules.items():
+        for tbl, m in mc_modules.items():
             bufs = {name: t.detach().cpu() for name, t in m.named_buffers()}
-            mch_state[f] = bufs
-            summary[f] = {name: {"shape": list(t.shape), "dtype": str(t.dtype)}
-                          for name, t in bufs.items()}
+            mch_state[tbl] = bufs
+            summary[tbl] = {name: {"shape": list(t.shape), "dtype": str(t.dtype)}
+                            for name, t in bufs.items()}
         torch.save(mch_state, os.path.join(ckpt_dir, "mch_buffers.pt"))
         with open(os.path.join(ckpt_dir, "mch_buffers_summary.json"), "w") as fh:
             json.dump(summary, fh, indent=2)
