@@ -50,10 +50,14 @@ Two load-bearing boundaries:
 3. **Clean deltas**: row `||Δ||` and cosine for slot-stable survivors, gathered by id.
 4. **Frequency-residual score** (the differentiated signal): the popularity confound is that
    `||Δ||` tracks how often an id was trained. `dcount = count_cur - count_prev` (from the LFU
-   `_mch_counts`) is the per-interval update count, free in the checkpoint. Fit
-   `log(||Δ||) ≈ a + b·log1p(dcount)` and take the MAD-z-scored residual: high-positive moved
-   more than its training predicts; high-negative trained but barely moved.
-5. **Geometry** (scale-safe): `dim×dim` row-covariance eigenspectrum → effective rank,
+   `_mch_counts`) is the per-interval update count, free in the checkpoint. Over the ids that
+   actually moved, fit `log(||Δ||) ≈ a + b·log1p(dcount)` and take the MAD-z-scored residual,
+   clipped: high-positive = moved more than its training predicts. (Fit on movers only; the
+   zipf tail of non-movers would otherwise collapse the regression and the scale.)
+5. **Frozen score** (the complementary signal): `pctrank(dcount) − pctrank(||Δ||)`, a rank-based
+   "trained but didn't move" (saturated/dead) measure that, unlike the residual, also scores the
+   zero-inflated non-movers.
+6. **Geometry** (scale-safe): `dim×dim` row-covariance eigenspectrum → effective rank,
    anisotropy, mean row-norm; reported prev vs cur.
 
 Dense tensors get the standard `||Δ||`, relative `||Δ||`, cosine, spectral norm, effective rank.

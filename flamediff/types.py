@@ -143,6 +143,7 @@ class EmbeddingTableDiff:
     cosine: np.ndarray
     dcount: np.ndarray
     freq_resid: np.ndarray
+    frozen_score: np.ndarray
     geom_prev: GeomStats
     geom_cur: GeomStats
     inserted_ids: np.ndarray | None = None
@@ -170,6 +171,20 @@ class EmbeddingTableDiff:
         order = np.argsort(-arr)[:k]
         return [
             (int(self.surv_ids[i]), float(arr[i]), float(self.delta_norm[i]), int(self.dcount[i]))
+            for i in order
+        ]
+
+    def top_frozen(self, k: int = 10) -> list[tuple]:
+        """Top-k clean survivors most "trained but didn't move" (saturated/frozen).
+
+        Returns (id, frozen_score, delta_norm, dcount).
+        """
+        if self.frozen_score.size == 0:
+            return []
+        order = np.argsort(-self.frozen_score)[:k]
+        return [
+            (int(self.surv_ids[i]), float(self.frozen_score[i]),
+             float(self.delta_norm[i]), int(self.dcount[i]))
             for i in order
         ]
 

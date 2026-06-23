@@ -42,6 +42,9 @@ def main() -> None:
                 print("        top freq_resid movers (id, score, ||Δ||, dcount):")
                 for mid, score, dn, dc in td.top_movers(5, by="freq_resid"):
                     print(f"        id={mid:6d}  score={score:+6.2f}  ||Δ||={dn:.5f}  dcount={dc}")
+                print("        top frozen / trained-but-still (id, frozen, ||Δ||, dcount):")
+                for fid, fs, fdn, fdc in td.top_frozen(5):
+                    print(f"        id={fid:6d}  frozen={fs:+.2f}  ||Δ||={fdn:.5f}  dcount={fdc}")
         print()
         prev = cur
 

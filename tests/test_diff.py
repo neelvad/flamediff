@@ -57,6 +57,34 @@ def test_freq_residual_flags_unexpected_mover(make_table):
     assert top_score > 5.0  # well clear of the noise floor
 
 
+def test_frozen_score_flags_trained_but_frozen(make_table):
+    # most ids move proportionally to dcount; one heavily-trained id is frozen (no movement).
+    n, dim = 100, 4
+    ids = np.arange(1, n + 1)
+    slots = np.arange(n)
+    rng = np.random.default_rng(1)
+    dcount = rng.integers(1, 50, size=n).astype(np.int64)
+
+    Wp = torch.zeros(n, dim)
+    Wc = torch.zeros(n, dim)
+    for i in range(n):
+        Wc[slots[i], 0] = 0.01 * dcount[i]
+    dcount[0] = 1000          # trained the most...
+    Wc[slots[0], 0] = 0.0     # ...but did not move at all -> frozen/saturated
+
+    prev = make_table(ids=ids, slots=slots, counts=np.zeros(n, dtype=np.int64),
+                      weights=Wp, num_slots=n)
+    cur = make_table(ids=ids, slots=slots, counts=dcount, weights=Wc, num_slots=n)
+    d = diff_table(prev, cur)
+
+    top_id, top_frozen, top_dn, top_dc = d.top_frozen(1)[0]
+    assert top_id == int(ids[0])
+    assert top_dc == 1000 and top_dn == 0.0
+    assert top_frozen > 0.5
+    # and it is NOT a freq_resid mover (it did not move) -> the two scores are complementary
+    assert int(d.top_movers(1, by="freq_resid")[0][0]) != int(ids[0])
+
+
 def test_diff_dense_basic():
     a = torch.randn(16, 8)
     b = a + 0.1 * torch.randn(16, 8)

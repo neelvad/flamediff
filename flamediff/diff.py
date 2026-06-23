@@ -56,8 +56,9 @@ def diff_table(
         dcount = (cc - cp).astype(np.int64) if cp is not None and cc is not None \
             else np.zeros(stable.shape, dtype=np.int64)
         freq_resid = stats.freq_residual(delta_norm, dcount)
+        frozen = stats.frozen_score(delta_norm, dcount)
     else:
-        delta_norm = cosine = freq_resid = np.zeros(0, dtype=np.float64)
+        delta_norm = cosine = freq_resid = frozen = np.zeros(0, dtype=np.float64)
         dcount = np.zeros(0, dtype=np.int64)
 
     return EmbeddingTableDiff(
@@ -74,6 +75,7 @@ def diff_table(
         cosine=cosine,
         dcount=dcount,
         freq_resid=freq_resid,
+        frozen_score=frozen,
         geom_prev=_geom(prev),
         geom_cur=_geom(cur),
         inserted_ids=inserted if keep_ids else None,

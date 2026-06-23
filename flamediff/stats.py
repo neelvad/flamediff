@@ -109,3 +109,33 @@ def freq_residual(delta_norm: np.ndarray, dcount: np.ndarray) -> np.ndarray:
         return out
     out[movers] = np.clip((resid - med) / scale, -25.0, 25.0)
     return out
+
+
+def _avg_rank(a: np.ndarray) -> np.ndarray:
+    """1-based average ranks (ties share the mean rank); like scipy.stats.rankdata('average')."""
+    a = np.asarray(a, dtype=np.float64)
+    sorter = np.argsort(a, kind="stable")
+    inv = np.empty(sorter.size, dtype=np.intp)
+    inv[sorter] = np.arange(sorter.size)
+    a_sorted = a[sorter]
+    obs = np.r_[True, a_sorted[1:] != a_sorted[:-1]]
+    dense = obs.cumsum()[inv]
+    counts = np.r_[np.flatnonzero(obs), a.size]
+    return 0.5 * (counts[dense] + counts[dense - 1] + 1)
+
+
+def frozen_score(delta_norm: np.ndarray, dcount: np.ndarray) -> np.ndarray:
+    """Trained-but-didn't-move signal: pctrank(dcount) - pctrank(||delta||), in [-1, 1].
+
+    High = updated a lot relative to how little it moved (saturated/frozen/dead). Rank-based,
+    so it is robust to the zero-inflated movement distribution and needs no threshold, and -
+    unlike the residual scorer - it meaningfully scores the non-movers too.
+    """
+    delta_norm = np.asarray(delta_norm, dtype=np.float64)
+    dcount = np.asarray(dcount, dtype=np.float64)
+    n = delta_norm.size
+    if n <= 1:
+        return np.zeros(n, dtype=np.float64)
+    pr_train = (_avg_rank(dcount) - 1.0) / (n - 1)
+    pr_move = (_avg_rank(delta_norm) - 1.0) / (n - 1)
+    return pr_train - pr_move
