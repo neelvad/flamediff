@@ -161,11 +161,13 @@ class EmbeddingTableDiff:
         }
 
     def top_movers(self, k: int = 10, by: str = "freq_resid") -> list[tuple]:
-        """Top-k clean survivors by |metric|; returns (id, score, delta_norm, dcount)."""
+        """Top-k clean survivors by descending metric (most positive first); for freq_resid
+        that is "moved more than its training predicts". Returns (id, score, delta_norm, dcount).
+        """
         arr = getattr(self, by)
         if arr.size == 0:
             return []
-        order = np.argsort(-np.abs(arr))[:k]
+        order = np.argsort(-arr)[:k]
         return [
             (int(self.surv_ids[i]), float(arr[i]), float(self.delta_norm[i]), int(self.dcount[i]))
             for i in order

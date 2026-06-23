@@ -81,20 +81,31 @@ def matrix_effective_rank(W: torch.Tensor) -> float:
 def freq_residual(delta_norm: np.ndarray, dcount: np.ndarray) -> np.ndarray:
     """How much each id moved relative to what its training frequency predicts.
 
-    Fit log(||delta||) ~ a + b*log1p(dcount) and return the MAD-z-scored residual.
-    Positive = moved more than its update count predicts; negative = trained but barely moved.
+    Fit log(||delta||) ~ a + b*log1p(dcount) over the ids that actually moved and return
+    the MAD-z-scored, clipped residual. Positive = moved more than its update count predicts;
+    negative = moved less. The fit/scale use movers only: the realistic zipf tail of ids that
+    never move (||delta|| == 0) is a separate population that would otherwise dominate the
+    regression and collapse the scale -- those score 0 here ("trained but frozen" is left to a
+    dedicated metric).
     """
     delta_norm = np.asarray(delta_norm, dtype=np.float64)
     dcount = np.asarray(dcount, dtype=np.float64)
-    if delta_norm.size == 0:
-        return np.zeros(0, dtype=np.float64)
-    y = np.log(np.maximum(delta_norm, _EPS))
-    x = np.log1p(np.maximum(dcount, 0.0))
-    if y.size < 3 or x.std() < _EPS:
+    out = np.zeros(delta_norm.size, dtype=np.float64)
+    movers = delta_norm > 0.0
+    if int(movers.sum()) < 3:
+        return out
+    y = np.log(delta_norm[movers])
+    x = np.log1p(np.maximum(dcount[movers], 0.0))
+    if x.std() < _EPS:
         resid = y - np.median(y)
     else:
         coef = np.linalg.lstsq(np.column_stack([np.ones_like(x), x]), y, rcond=None)[0]
         resid = y - (coef[0] + coef[1] * x)
     med = np.median(resid)
-    mad = np.median(np.abs(resid - med))
-    return (resid - med) / (1.4826 * mad + _EPS)
+    scale = 1.4826 * np.median(np.abs(resid - med))
+    if scale < _EPS:  # movers all fit perfectly -> fall back to their std
+        scale = float(resid.std())
+    if scale < _EPS:
+        return out
+    out[movers] = np.clip((resid - med) / scale, -25.0, 25.0)
+    return out
