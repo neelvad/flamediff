@@ -92,6 +92,15 @@ class InMemoryTable:
             raise KeyError("gather() called with non-resident ids")
         return self._weights[torch.from_numpy(slots)]
 
+    def copy_weights(self) -> torch.Tensor:
+        return self._weights.clone()
+
+    def with_weights(self, weights: torch.Tensor) -> InMemoryTable:
+        """A new table sharing this one's id->slot map and counts but with replaced weights."""
+        return InMemoryTable(
+            self.name, self.num_slots, self._sorted_ids, self._slots, weights, self._counts
+        )
+
 
 class DenseTensor:
     """A non-embedding weight tensor (MLP layers, interaction net, ...)."""

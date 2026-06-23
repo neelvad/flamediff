@@ -4,6 +4,7 @@ from __future__ import annotations
 from flamediff.adapters import torchrec_mch  # noqa: F401  (registers the adapter)
 from flamediff.adapters.base import get_adapter
 from flamediff.diff import diff_checkpoints, diff_dense, diff_table
+from flamediff.mutate import Mutation, mutate_checkpoint, mutate_table
 from flamediff.types import (
     Checkpoint,
     CheckpointDiff,
@@ -22,6 +23,9 @@ __all__ = [
     "diff_checkpoints",
     "diff_table",
     "diff_dense",
+    "mutate_table",
+    "mutate_checkpoint",
+    "Mutation",
     "Checkpoint",
     "CheckpointDiff",
     "EmbeddingTableDiff",
