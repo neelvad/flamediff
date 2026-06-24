@@ -8,7 +8,7 @@ version = "0.0.1"
 description = "Structural drift diffing for model checkpoints (recsys managed-collision embedding tables)"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = ["torch>=2.0", "numpy>=1.24"]
+dependencies = ["torch>=2.0", "numpy>=1.24", "ruptures>=1.1"]
 
 [dependency-groups]
 dev = ["pytest>=7", "ruff>=0.4"]
