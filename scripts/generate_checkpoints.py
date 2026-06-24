@@ -55,16 +55,15 @@ class Cfg:
     raw_vocab = 50_000      # distinct possible raw ids per feature
     zch_size = 20_000       # table capacity / slots (< raw_vocab => eviction forced)
     embedding_dim = 64
-    num_checkpoints = 6
+    num_checkpoints = 24
     steps_per_ckpt = 50
     batch_size = 1024
     eviction_interval = 20  # MCH evicts every N forward calls (low -> churn within each ckpt)
     lr = 0.1  # stable; higher (e.g. 1.0) diverges to NaN with this SGD + linear-head setup
     seed = 0
-    # Per-checkpoint offset of the Zipfian "hot" region. Shifting it forces eviction of
-    # now-cold ids and admission of newly-hot ids. ckpt 3 revisits ckpt 0's region and
-    # ckpt 5 revisits ckpt 1's -> deliberately exercises RE-ADMISSION (the confound).
-    hot_offsets = [0, 10_000, 20_000, 0, 30_000, 10_000]
+    # Per-checkpoint offset of the Zipfian "hot" region, cycled across the run so eviction,
+    # admission, and RE-ADMISSION keep happening (each region is revisited every 5 ckpts).
+    hot_offsets = [(i % 5) * 10_000 for i in range(num_checkpoints)]
 
 
 @app.function(gpu="T4", volumes={"/data": vol}, timeout=60 * 30)
