@@ -15,8 +15,10 @@ Managed with [uv](https://docs.astral.sh/uv/) (Python 3.12, pinned in `.python-v
 uv sync                 # create .venv and install deps + dev group
 uv run pytest -q        # unit tests (add nothing) / integration (needs fixtures/)
 uv run ruff check .
-uv run scripts/run_diff.py        # diff a downloaded trajectory
+uv run scripts/run_diff.py        # pairwise diff over a downloaded trajectory
 uv run scripts/mutation_demo.py   # detection-power demo
+uv run scripts/detect_demo.py     # ranked trajectory anomaly events
+uv run flamediff-tui              # interactive TUI to browse events (tui extra / dev group)
 ```
 
 ## Reference fixtures
