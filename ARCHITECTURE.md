@@ -71,3 +71,30 @@ b = load_checkpoint("fixtures/run_.../ckpt_001")
 d = diff_checkpoints(a, b)
 d.embedding_diffs["author_id_emb"].top_movers(10)   # by frequency-residual
 ```
+
+## Trajectory detection (stages 1–3)
+
+Turns the pairwise diff into run-level monitoring — *which step* deviates from the run's own
+history. The pairwise `diff.py` is untouched and pure-measurement; detection is a separate consumer.
+
+- `flamediff/trajectory.py` — **stage 1+2**: `diff_trajectory(checkpoints)` runs consecutive
+  pairwise diffs; `step_features` collapses each `CheckpointDiff` to scalar `(table, metric)`
+  features → a `MetricSeries` per metric. Features: churn rates, movement percentiles, scorer
+  tails (`freq_resid_max`, `n_freq_resid_hi`, `frozen_max`), geometry; dense tensors too.
+- `flamediff/detect.py` — **stage 3**: `detect_trajectory(traj)` runs three detectors per series
+  and returns `Event`s ranked by severity:
+  - `robust_z` — point spikes: `(value − trailing_median) / global_robust_scale`. Trailing
+    median tracks level (slow drift is PH/PELT's job); the *global* robust scale is a stable
+    noise floor that avoids the tiny-trailing-window-MAD blow-up.
+  - `page_hinkley` — online sequential drift on the standardized series.
+  - `pelt` — offline changepoint segmentation (`ruptures`), severity = standardized mean-shift.
+
+**Two-level drill-down:** an `Event` carries `(index, table, metric)`; `traj.diffs[index]` is the
+pairwise diff for that step, whose per-id arrays (`top_movers`/`top_frozen`) give attribution.
+
+Detection judges deviation in **noise-floor units**, so `k` / `window` / `pelt_pen` are the knobs
+a future calibration sweep tunes. Cross-series joint detection (Mahalanobis) is a deliberate v2.
+
+**Testing:** synthetic series with planted spikes / level-shifts / drift (unit); a trajectory
+mutation test injects a known corruption at a mid-run checkpoint and asserts the detector flags
+that step above the run's noise floor (integration, gated on `fixtures/`).

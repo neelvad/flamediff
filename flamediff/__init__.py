@@ -3,8 +3,10 @@ from __future__ import annotations
 
 from flamediff.adapters import torchrec_mch  # noqa: F401  (registers the adapter)
 from flamediff.adapters.base import get_adapter
+from flamediff.detect import DetectionResult, Event, detect_trajectory
 from flamediff.diff import diff_checkpoints, diff_dense, diff_table
 from flamediff.mutate import Mutation, mutate_checkpoint, mutate_table
+from flamediff.trajectory import MetricSeries, TrajectoryDiff, diff_trajectory
 from flamediff.types import (
     Checkpoint,
     CheckpointDiff,
@@ -26,6 +28,12 @@ __all__ = [
     "mutate_table",
     "mutate_checkpoint",
     "Mutation",
+    "diff_trajectory",
+    "detect_trajectory",
+    "TrajectoryDiff",
+    "MetricSeries",
+    "DetectionResult",
+    "Event",
     "Checkpoint",
     "CheckpointDiff",
     "EmbeddingTableDiff",
