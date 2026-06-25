@@ -169,14 +169,6 @@ class Calibration:
         t = self.threshold(method)
         return float(severity / t) if 0 < t < float("inf") else 0.0
 
-    def p_value(self, method: str, severity: float) -> float:
-        """Right-tail p-value vs the clean null (for display; saturates to 0 far in the tail)."""
-        q = self._methods.get(method, {}).get("null_quantiles", [])
-        if not q:
-            return 1.0
-        pos = int(np.searchsorted(np.asarray(q), severity, side="right"))
-        return float(1.0 - pos / len(q))
-
 
 def _load_default_calibration() -> Calibration | None:
     path = os.path.join(os.path.dirname(__file__), "calibration.json")

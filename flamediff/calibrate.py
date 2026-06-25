@@ -213,13 +213,12 @@ def run_calibration(clean_trajectories, battery, *, trials_per_cell: int = 40,
 
 
 def derive_params(result: CalibrationResult, *, target_fpr: float = 0.05) -> dict:
-    """Compact JSON the detector loads: per-method calibrated threshold + null quantiles."""
-    qs = np.linspace(0.0, 1.0, 101)
-    methods = {}
-    for m in METHODS:
-        pool = result.null.pooled.get(m, np.array([]))
-        methods[m] = {
-            "threshold": result.operating_threshold(m, target_fpr),
-            "null_quantiles": (np.quantile(pool, qs).tolist() if pool.size else []),
-        }
-    return {"target_fpr": target_fpr, "methods": methods}
+    """Compact JSON the detector loads: per-method FPR-calibrated threshold."""
+    methods = {m: {"threshold": result.operating_threshold(m, target_fpr)} for m in METHODS}
+    return {
+        "provenance": ("SYNTHETIC (stationary trajectories, dim=8, n=48, steps=20) -- thresholds "
+                       "are scale-transferable but the per-run-max null reflects the synthetic "
+                       "look-elsewhere count; regenerate for your data via scripts/calibrate.py"),
+        "target_fpr": target_fpr,
+        "methods": methods,
+    }
