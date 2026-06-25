@@ -11,6 +11,8 @@ calibration pass / the view can normalize per method.
 """
 from __future__ import annotations
 
+import json
+import os
 from dataclasses import dataclass
 
 import numpy as np
@@ -33,6 +35,7 @@ class Event:
     score: float       # signed severity (robust-z units / standardized shift)
     direction: str     # "up" | "down"
     method: str
+    calibrated_severity: float | None = None  # null p-value; set when calibration is active
 
 
 @dataclass
@@ -146,10 +149,67 @@ def detect_series(
     return events
 
 
-def detect_trajectory(traj: TrajectoryDiff, **cfg) -> DetectionResult:
-    """Run detection over every series and return events ranked by severity."""
-    events: list[Event] = []
+# --- calibration (optional; produced by scripts/calibrate.py) -----------------------------
+_PERMISSIVE_DEFAULTS = {"k": 0.0, "ph_lam": 0.3, "pelt_pen": 1.0}
+
+
+class Calibration:
+    """FPR-calibrated thresholds + a severity->null-p-value map, from calibration.json."""
+
+    def __init__(self, params: dict):
+        self.target_fpr = params.get("target_fpr")
+        self._methods = params.get("methods", {})
+
+    def threshold(self, method: str) -> float:
+        return self._methods.get(method, {}).get("threshold", 0.0)
+
+    def calibrated(self, method: str, severity: float) -> float:
+        """Severity in units of the method's FPR-calibrated threshold (>=1 clears the bar).
+        Comparable across methods and tail-resolving, so ranking isn't skewed by raw scale."""
+        t = self.threshold(method)
+        return float(severity / t) if 0 < t < float("inf") else 0.0
+
+    def p_value(self, method: str, severity: float) -> float:
+        """Right-tail p-value vs the clean null (for display; saturates to 0 far in the tail)."""
+        q = self._methods.get(method, {}).get("null_quantiles", [])
+        if not q:
+            return 1.0
+        pos = int(np.searchsorted(np.asarray(q), severity, side="right"))
+        return float(1.0 - pos / len(q))
+
+
+def _load_default_calibration() -> Calibration | None:
+    path = os.path.join(os.path.dirname(__file__), "calibration.json")
+    if os.path.exists(path):
+        with open(path) as fh:
+            return Calibration(json.load(fh))
+    return None
+
+
+_DEFAULT_CALIBRATION = _load_default_calibration()
+
+
+def detect_trajectory(traj: TrajectoryDiff, *, calibration=_DEFAULT_CALIBRATION,
+                      **cfg) -> DetectionResult:
+    """Detect over every series. With a calibration (default: the committed one), generate
+    candidates permissively, keep those clearing each method's FPR-calibrated threshold, and
+    rank by the calibrated severity (null p-value) -- comparable across methods. Without one,
+    use the raw per-method thresholds in `cfg` and rank by |score|.
+    """
+    if calibration is None:
+        events: list[Event] = []
+        for series in traj.series.values():
+            events.extend(detect_series(series, **cfg))
+        events.sort(key=lambda e: -abs(e.score))
+        return DetectionResult(events=events, series=traj.series)
+
+    perm = {**_PERMISSIVE_DEFAULTS, **cfg}
+    events = []
     for series in traj.series.values():
-        events.extend(detect_series(series, **cfg))
-    events.sort(key=lambda e: -abs(e.score))
+        for e in detect_series(series, **perm):
+            cs = calibration.calibrated(e.method, abs(e.score))
+            e.calibrated_severity = cs
+            if cs >= 1.0:  # clears the FPR-calibrated bar
+                events.append(e)
+    events.sort(key=lambda e: -e.calibrated_severity)
     return DetectionResult(events=events, series=traj.series)

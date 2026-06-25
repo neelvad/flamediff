@@ -17,11 +17,12 @@ def main() -> None:
     traj = diff_trajectory([load_checkpoint(p) for p in paths])
     result = detect_trajectory(traj)
     print(f"series: {len(traj.series)}   events: {len(result.events)}\n")
-    print("top events (most severe first):")
+    print("top events (most severe first; cal = severity / FPR-calibrated bar):")
     for e in result.top(15):
         loc = f"idx={e.index:2d} step={e.step}"
+        cal = f"{e.calibrated_severity:5.1f}x" if e.calibrated_severity is not None else "   -  "
         print(f"  {loc:16s} {e.table}.{e.metric:16s} "
-              f"val={e.value:+.4f} base={e.baseline:+.4f} sev={e.score:+7.2f} {e.method}")
+              f"cal={cal} raw={e.score:+7.2f} {e.method}")
 
 
 if __name__ == "__main__":
