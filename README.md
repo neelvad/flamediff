@@ -2,7 +2,8 @@
 
 A tool for tracking structural changes across raw model checkpoints (PyTorch /
 safetensors) dropped over a training run — reading weights off disk, no forward pass.
-See [`plan.md`](plan.md) for the design and scope.
+See [`plan.md`](plan.md) for the design, [`ROADMAP.md`](ROADMAP.md) for the product plan, and
+[`ARCHITECTURE.md`](ARCHITECTURE.md) for the built system.
 
 v1 target: **dynamic managed-collision embedding tables** (recsys / TorchRec MCH-ZCH),
 where the diff is an id-keyed join over checkpoints rather than a row-index subtract.
