@@ -22,10 +22,10 @@ def main() -> None:
     print(f"trajectory: {run_dir}  ({len(ckpts)} checkpoints)\n")
 
     prev = load_checkpoint(ckpts[0])
-    for path in ckpts[1:]:
-        cur = load_checkpoint(path)
+    for i in range(1, len(ckpts)):
+        cur = load_checkpoint(ckpts[i])
         d = diff_checkpoints(prev, cur)
-        print(f"=== {os.path.basename(ckpts[ckpts.index(path) - 1])} -> {os.path.basename(path)}"
+        print(f"=== {os.path.basename(ckpts[i - 1])} -> {os.path.basename(ckpts[i])}"
               f"  (step {d.step_prev} -> {d.step_cur}) ===")
         for name, td in d.embedding_diffs.items():
             c = td.churn_summary()

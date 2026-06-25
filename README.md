@@ -7,6 +7,17 @@ See [`plan.md`](plan.md) for the design and scope.
 v1 target: **dynamic managed-collision embedding tables** (recsys / TorchRec MCH-ZCH),
 where the diff is an id-keyed join over checkpoints rather than a row-index subtract.
 
+> **v1 scope (honest limits):**
+> - **In-memory scale.** Weights are mmap-backed, but the id-join and geometry materialize, so
+>   it runs comfortably at fixture scale (~tens of thousands of ids), not yet sharded/out-of-core
+>   for billion-row tables. The `EmbeddingTable` gather-by-id Protocol is the seam for a future
+>   `MmapTable`/`ShardedTable`; only `InMemoryTable` exists today.
+> - **Synthetic calibration.** The shipped `flamediff/calibration.json` is derived from a small
+>   synthetic battery (see its `provenance` field). Thresholds are scale-transferable, but the
+>   FPR is tuned to the synthetic look-elsewhere count — regenerate for your data with
+>   `uv run scripts/calibrate.py`.
+> - **One format.** Only the TorchRec MCH/ZCH adapter exists; static-hash (regime A) is deferred.
+
 ## Development
 
 Managed with [uv](https://docs.astral.sh/uv/) (Python 3.12, pinned in `.python-version`):
