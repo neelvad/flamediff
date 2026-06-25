@@ -55,6 +55,18 @@ def mutate_table(
     return table.with_weights(W), Mutation(table.name, kind, ids, float(magnitude))
 
 
+def set_rows(table: InMemoryTable, ids, rows: torch.Tensor) -> InMemoryTable:
+    """Return a copy of ``table`` with the given resident ids' rows replaced by ``rows``
+    (``rows`` aligned to ``ids``). Low-level primitive used by the calibration injector."""
+    ids = np.asarray(ids, dtype=np.int64)
+    slots = table.slot_of(ids)
+    if (slots < 0).any():
+        raise ValueError("set_rows ids must be resident in the table")
+    W = table.copy_weights()
+    W[torch.from_numpy(slots)] = rows.to(W.dtype)
+    return table.with_weights(W)
+
+
 def mutate_checkpoint(
     ckpt: Checkpoint, table_name: str, **kwargs
 ) -> tuple[Checkpoint, Mutation]:
