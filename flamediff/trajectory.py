@@ -41,6 +41,7 @@ def _emb_features(td: EmbeddingTableDiff) -> dict[str, float]:
         "inserted_rate": td.n_inserted / max(td.n_cur, 1),
         "evicted_rate": td.n_evicted / max(td.n_cur, 1),
         "slot_moved_rate": td.n_slot_moved / max(td.n_survivors, 1),
+        "readmit_rate": td.n_readmitted / max(td.n_survivors, 1),
         "mover_frac": float((dn > 0).mean()) if dn.size else 0.0,
         # movement (point-style, sensitive)
         "delta_p50": float(np.median(dn)) if dn.size else 0.0,

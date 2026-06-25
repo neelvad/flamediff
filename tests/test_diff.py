@@ -28,7 +28,20 @@ def test_partition_invariants(make_table):
 
     assert d.n_survivors + d.n_evicted == d.n_prev
     assert d.n_survivors + d.n_inserted == d.n_cur
-    assert d.n_slot_stable + d.n_slot_moved == d.n_survivors
+    assert d.n_slot_stable + d.n_slot_moved + d.n_readmitted == d.n_survivors
+
+
+def test_readmission_excluded_via_count_reset(make_table):
+    # id 2 keeps its slot but its LFU count drops (a reset) -> evicted+re-admitted -> excluded.
+    prev = make_table(ids=[1, 2, 3], slots=[0, 1, 2], counts=[5, 9, 5],
+                      weights=torch.zeros(8, 4), num_slots=8)
+    cur = make_table(ids=[1, 2, 3], slots=[0, 1, 2], counts=[6, 2, 7],
+                     weights=torch.zeros(8, 4), num_slots=8)
+    d = diff_table(prev, cur)
+
+    assert d.n_readmitted == 1 and set(d.readmitted_ids.tolist()) == {2}
+    assert 2 not in set(d.surv_ids.tolist())  # excluded from the clean learning set
+    assert d.n_slot_stable + d.n_slot_moved + d.n_readmitted == d.n_survivors
 
 
 def test_freq_residual_flags_unexpected_mover(make_table):

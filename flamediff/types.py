@@ -146,7 +146,8 @@ class EmbeddingTableDiff:
     n_evicted: int
     n_slot_stable: int
     n_slot_moved: int
-    # per-id arrays over the CLEAN set (slot-stable survivors), all aligned with surv_ids
+    n_readmitted: int
+    # per-id arrays over the CLEAN set (slot-stable, non-re-admitted survivors), aligned w/ surv_ids
     surv_ids: np.ndarray
     delta_norm: np.ndarray
     cosine: np.ndarray
@@ -158,6 +159,7 @@ class EmbeddingTableDiff:
     inserted_ids: np.ndarray | None = None
     evicted_ids: np.ndarray | None = None
     slot_moved_ids: np.ndarray | None = None
+    readmitted_ids: np.ndarray | None = None
 
     def churn_summary(self) -> dict:
         return {
@@ -168,6 +170,7 @@ class EmbeddingTableDiff:
             "evicted": self.n_evicted,
             "slot_stable": self.n_slot_stable,
             "slot_moved": self.n_slot_moved,
+            "readmitted": self.n_readmitted,
         }
 
     def top_movers(self, k: int = 10, by: str = "freq_resid") -> list[tuple]:
