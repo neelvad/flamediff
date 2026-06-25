@@ -73,11 +73,17 @@ class FlamediffTUI(App):
         self.sub_title = f"{len(self.traj.diffs)} diffs · {len(self._all_events)} events"
         self._fill_table()
 
-    def _sev_text(self, score: float) -> Text:
+    def _sev_text(self, e) -> Text:
+        # show what we actually rank by: the calibrated severity (x over the FPR bar). Fall back
+        # to the raw score only when no calibration is loaded.
         th = self.current_theme
-        a = abs(score)
+        cs = e.calibrated_severity
+        if cs is not None:
+            color = th.error if cs >= 8 else th.warning if cs >= 3 else th.success
+            return Text(f"{cs:.1f}x", style=f"bold {color}")
+        a = abs(e.score)
         color = th.error if a >= 12 else th.warning if a >= 5 else th.success
-        return Text(f"{score:+.1f}", style=f"bold {color}")
+        return Text(f"{e.score:+.1f}", style=f"bold {color}")
 
     def _dir_text(self, direction: str) -> Text:
         th = self.current_theme
@@ -88,7 +94,7 @@ class FlamediffTUI(App):
         table.clear()
         for e in self.events:
             table.add_row(str(e.index), str(e.step), f"{e.table} · {e.metric}",
-                          self._sev_text(e.score), e.method, self._dir_text(e.direction))
+                          self._sev_text(e), e.method, self._dir_text(e.direction))
         if self.events:
             self._show(0)
         else:
@@ -120,9 +126,11 @@ class FlamediffTUI(App):
         v = s.value
         match = np.where(s.index == e.index)[0]
         pos = int(match[0]) if match.size else -1
+        cal = f"[b {th.error}]cal {e.calibrated_severity:.1f}x[/]   " \
+            if e.calibrated_severity is not None else ""
         head = (f"[b {th.primary}]{e.table}[/] · [b {th.secondary}]{e.metric}[/]\n"
-                f"value={e.value:+.4f}   baseline={e.baseline:+.4f}   "
-                f"[b {th.error}]sev {e.score:+.2f}[/] [{th.accent}]{e.method} {e.direction}[/]")
+                f"value={e.value:+.4f}   baseline={e.baseline:+.4f}\n"
+                f"{cal}[{th.accent}]raw {e.score:+.2f} ({e.method} {e.direction})[/]")
         lo, hi = float(np.nanmin(v)), float(np.nanmax(v))
         foot = (f"[{th.panel}]min {lo:+.4f}  max {hi:+.4f}  steps {v.size}[/]   "
                 f"[{th.error}]●[/] flagged @ idx {e.index}")
