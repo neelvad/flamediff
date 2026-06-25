@@ -18,6 +18,7 @@ uv run ruff check .
 uv run scripts/run_diff.py        # pairwise diff over a downloaded trajectory
 uv run scripts/mutation_demo.py   # detection-power demo
 uv run scripts/detect_demo.py     # ranked trajectory anomaly events
+uv run scripts/calibrate.py       # calibration sweep -> power report + calibration.json
 uv run flamediff-tui              # interactive TUI to browse events (tui extra / dev group)
 ```
 

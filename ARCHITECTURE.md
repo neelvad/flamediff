@@ -98,3 +98,27 @@ a future calibration sweep tunes. Cross-series joint detection (Mahalanobis) is 
 **Testing:** synthetic series with planted spikes / level-shifts / drift (unit); a trajectory
 mutation test injects a known corruption at a mid-run checkpoint and asserts the detector flags
 that step above the run's noise floor (integration, gated on `fixtures/`).
+
+## Calibration sweep (detection power + FPR-calibrated thresholds)
+
+`flamediff/calibrate.py` runs an offline mutation sweep to (1) measure detection power and
+(2) calibrate the detector. Method — score once, threshold analytically:
+- **Null:** run detectors permissively on stationary synthetic clean trajectories; pool the
+  severities per method and the per-run max severity.
+- **Power:** inject a known corruption (scramble / zero / noise / freeze; transient or
+  persistent) at a random step and record the max severity at the injected location per method.
+  TPR at any threshold is then a tail fraction — so power curves, ROC, and minimum-detectable
+  effect fall out without re-running.
+
+`scripts/calibrate.py` runs it and writes `flamediff/calibration.json`: per method, the
+**FPR-calibrated threshold** (the `1 − target_fpr` quantile of the per-run-max null) and the
+null severity quantiles.
+
+**Wire-back (`detect.py`):** with `calibration.json` present (the default), `detect_trajectory`
+generates candidates permissively, keeps those clearing each method's calibrated threshold, and
+sets `Event.calibrated_severity = severity / threshold` (≥1 = over the bar) — a comparable,
+tail-resolving severity it ranks by, so Page-Hinkley's large raw scale no longer skews the order.
+Falls back to raw per-method thresholds + `|score|` ranking when no calibration is loaded.
+
+Findings on the synthetic battery: scramble is detectable to ~0.25× row-norm; freeze is weaker;
+PELT is weak on transient spikes but strong on persistent shifts (detector specialization).
