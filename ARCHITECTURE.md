@@ -36,9 +36,15 @@ Two load-bearing boundaries:
 - `flamediff/stats.py` — owned commodity functions (torch + numpy): row delta-norm / cosine,
   covariance-eigenspectrum geometry (effective rank, anisotropy), dense spectral norm /
   effective rank, and the frequency-residual scorer.
-- `flamediff/adapters/base.py` — `CheckpointAdapter` Protocol + a tiny registry.
-- `flamediff/adapters/torchrec_mch.py` — parses a TorchRec MCEC **state_dict** (no
-  `import torchrec`): groups keys by table, lifts the MCH buffers into `InMemoryTable`s.
+- `flamediff/adapters/` — `base.py` (the `CheckpointAdapter` Protocol + registry) and two
+  readers, both torchrec-free and sharing `_torchrec_common.assemble_checkpoint`:
+  - `torchrec_mch.py` — single-device: `torch.load` a `state_dict.pt`.
+  - `torchrec_mch_sharded.py` — **sharded (production)**: a DCP directory (`.metadata` +
+    `__{rank}_{idx}.distcp`); `dcp.load` reassembles the row-wise `ShardedTensor`s (weight + map)
+    into full tensors. Works because reassembled MCH buffers are structurally identical to
+    single-device — **global** slots, **globally-sorted** ids (verified on 2 GPUs). Runs locally
+    (DCP single-process; no GPU/torchrec/PG). Stage 1 = full reassembly into `InMemoryTable`
+    (fits-in-RAM); Stage 2 (later) = a lazy out-of-core `ShardedTable`.
 - `flamediff/diff.py` — the pairwise algorithm.
 
 ## Diff algorithm (per managed-collision table)
