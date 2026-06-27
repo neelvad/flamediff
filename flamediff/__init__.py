@@ -1,7 +1,7 @@
 """flamediff: structural drift diffing for model checkpoints."""
 from __future__ import annotations
 
-from flamediff.adapters import torchrec_mch  # noqa: F401  (registers the adapter)
+from flamediff.adapters import torchrec_mch, torchrec_mch_sharded  # noqa: F401  (register adapters)
 from flamediff.adapters.base import get_adapter
 from flamediff.detect import DetectionResult, Event, detect_trajectory
 from flamediff.diff import diff_checkpoints, diff_dense, diff_table
