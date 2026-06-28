@@ -1,8 +1,11 @@
 import os
 
+import numpy as np
 import pytest
+import torch
 
 from flamediff import diff_checkpoints, load_checkpoint
+from flamediff.adapters.torchrec_mch_sharded import ShardedTorchRecMCHAdapter
 
 SHARDED_FIXTURE = "fixtures/sharded_sem"  # a DCP dir (2-rank, populated); see scripts/
 
@@ -35,3 +38,16 @@ def test_sharded_self_diff_is_zero():
     assert td.n_slot_moved == 0
     assert td.n_survivors == ck.embedding_tables["author_id_emb"].ids().size
     assert (td.delta_norm.size == 0) or float(td.delta_norm.max()) == 0.0
+
+
+@pytest.mark.integration
+def test_out_of_core_weight_matches_in_ram():
+    # forcing the out-of-core (mmap-scratch) weight path must reassemble identically to RAM.
+    path = _fixture()
+    in_ram = ShardedTorchRecMCHAdapter(out_of_core_bytes=10**15).load(path)   # always RAM
+    ooc = ShardedTorchRecMCHAdapter(out_of_core_bytes=0).load(path)           # force mmap scratch
+    t_ram = in_ram.embedding_tables["author_id_emb"]
+    t_ooc = ooc.embedding_tables["author_id_emb"]
+    assert np.array_equal(t_ram.ids(), t_ooc.ids())
+    ids = t_ram.ids()
+    assert torch.equal(t_ram.gather(ids), t_ooc.gather(ids))  # lazy mmap gather == RAM gather
