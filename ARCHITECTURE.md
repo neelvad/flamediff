@@ -43,8 +43,9 @@ Two load-bearing boundaries:
     `__{rank}_{idx}.distcp`); `dcp.load` reassembles the row-wise `ShardedTensor`s (weight + map)
     into full tensors. Works because reassembled MCH buffers are structurally identical to
     single-device — **global** slots, **globally-sorted** ids (verified on 2 GPUs). Runs locally
-    (DCP single-process; no GPU/torchrec/PG). Stage 1 = full reassembly into `InMemoryTable`
-    (fits-in-RAM); Stage 2 (later) = a lazy out-of-core `ShardedTable`.
+    (DCP single-process; no GPU/torchrec/PG). Maps load to RAM; a weight above `out_of_core_bytes`
+    reassembles into an **mmap scratch** file (bounded RAM) gathered lazily — automatic by size
+    (out-of-core). Stage 2.5 (later): mmap the `.distcp` chunks directly to skip the scratch copy.
 - `flamediff/diff.py` — the pairwise algorithm.
 
 ## Diff algorithm (per managed-collision table)
