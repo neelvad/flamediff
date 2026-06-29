@@ -129,3 +129,25 @@ Falls back to raw per-method thresholds + `|score|` ranking when no calibration 
 
 Findings on the synthetic battery: scramble is detectable to ~0.25× row-norm; freeze is weaker;
 PELT is weak on transient spikes but strong on persistent shifts (detector specialization).
+(The shipped `calibration.json` is now **real-data-derived** — see `scripts/calibrate_real.py`.)
+
+## Attribution — *why* a table drifted (`attribute.py`)
+
+A separate analysis layer over a table diff: `attribute_table(prev, cur, diff)` re-gathers the
+clean-survivor rows (via the Protocol, so it works on sharded/out-of-core tables) and decomposes
+their drift, nested:
+1. **Global basis drift** — orthogonal Procrustes (`stats.procrustes_align`) removes the table-wide
+   rotation + mean shift; an *energy* split reports `frac_translation / frac_rotation /
+   frac_aligned_residual` (sums to 1). A big rotation is itself a checkpoint-level health signal.
+2. **Popularity churn** — `stats.loglog_residual` regresses the *aligned* per-id drift on
+   `log dcount / log count` (multi-covariate `freq_resid`); `popularity_r2` is how much of the
+   per-id drift popularity explains.
+3. **Idiosyncratic residual** — the de-confounded score: ids whose representation genuinely changed,
+   independent of how much they trained. `Attribution.top_movers()` ranks them.
+
+Correlational, not causal — made trustworthy by **injection validation**: planting known
+popularity-*independent* change and showing the residual recovers it where raw `‖Δ‖` can't. With a
+strong confound the raw scorer is fooled (AUC 0.21) while the residual nails it (0.999); on the real
+run (modest confound, popularity ≈ 25% of drift) the lift is smaller but real (0.884 → 0.964).
+Honest limit: *coordinated* genuine drift is indistinguishable from basis drift (identifiability).
+Scaling (similarity Procrustes) is a deferred toggle.
