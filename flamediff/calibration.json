@@ -1,15 +1,15 @@
 {
-  "provenance": "SYNTHETIC (stationary trajectories, dim=8, n=48, steps=20) -- thresholds are scale-transferable but the per-run-max null reflects the synthetic look-elsewhere count; regenerate for your data via scripts/calibrate.py",
+  "provenance": "REAL: 10 clean stationary TorchRec MCH runs (dim=64, zch=20000, 2 tables, 11 steady-state checkpoints each); regenerate via scripts/calibrate_real.py",
   "target_fpr": 0.05,
   "methods": {
     "robust_z": {
-      "threshold": 6.576375367934707
+      "threshold": 5.740253775561408
     },
     "page_hinkley": {
-      "threshold": 5.528596421838955
+      "threshold": 11.015271125543038
     },
     "pelt": {
-      "threshold": 2.9620166478696617
+      "threshold": 3.707689037621188
     }
   }
 }

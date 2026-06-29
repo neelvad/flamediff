@@ -13,10 +13,9 @@ where the diff is an id-keyed join over checkpoints rather than a row-index subt
 >   it runs comfortably at fixture scale (~tens of thousands of ids), not yet sharded/out-of-core
 >   for billion-row tables. The `EmbeddingTable` gather-by-id Protocol is the seam for a future
 >   `MmapTable`/`ShardedTable`; only `InMemoryTable` exists today.
-> - **Synthetic calibration.** The shipped `flamediff/calibration.json` is derived from a small
->   synthetic battery (see its `provenance` field). Thresholds are scale-transferable, but the
->   FPR is tuned to the synthetic look-elsewhere count — regenerate for your data with
->   `uv run scripts/calibrate.py`.
+> - **Calibration.** The shipped `flamediff/calibration.json` is derived from **clean real-scale
+>   runs** (10 stationary TorchRec MCH runs, dim=64, 2 tables; see its `provenance`). Regenerate
+>   for your own data with `scripts/calibrate_real.py` (Modal) or `scripts/calibrate.py` (synthetic).
 > - **One format.** Only the TorchRec MCH/ZCH adapter exists; static-hash (regime A) is deferred.
 
 ## Development
