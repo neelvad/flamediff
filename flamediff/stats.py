@@ -139,3 +139,67 @@ def frozen_score(delta_norm: np.ndarray, dcount: np.ndarray) -> np.ndarray:
     pr_train = (_avg_rank(dcount) - 1.0) / (n - 1)
     pr_move = (_avg_rank(delta_norm) - 1.0) / (n - 1)
     return pr_train - pr_move
+
+
+# --- attribution: separate global basis drift / popularity / idiosyncratic change ------------
+def procrustes_align(prev: torch.Tensor, cur: torch.Tensor) -> dict:
+    """Orthogonal-Procrustes align `cur` onto `prev` (rotation + translation) over shared rows.
+
+    Returns the per-row *aligned* drift norm (movement after removing the table-wide rotation
+    and mean shift) plus an energy decomposition of the total drift -- translation / rotation /
+    aligned-residual fractions that sum to 1. The SVD is dim x dim, so it is cheap at any #rows.
+    """
+    n, dim = prev.shape
+    if n < 2:
+        return {"aligned_delta_norm": np.zeros(n), "mean_shift_norm": 0.0,
+                "rotation_magnitude": 0.0, "frac_translation": 0.0,
+                "frac_rotation": 0.0, "frac_aligned": 1.0}
+    mean_shift = cur.mean(0) - prev.mean(0)
+    ap = prev - prev.mean(0)
+    ac = cur - cur.mean(0)
+    ss_total = float(((cur - prev) ** 2).sum()) + _EPS
+    ss_centered = float(((ap - ac) ** 2).sum())
+    # R minimizes ||ap - ac @ R|| over orthogonal R  (M = ac^T ap = U S Vt -> R = U Vt)
+    u, _s, vt = torch.linalg.svd(ac.T @ ap)
+    R = u @ vt
+    aligned_delta = ap - ac @ R
+    ss_aligned = float((aligned_delta ** 2).sum())
+    return {
+        "aligned_delta_norm": aligned_delta.norm(dim=1).cpu().numpy(),
+        "mean_shift_norm": float(mean_shift.norm()),
+        "rotation_magnitude": float((R - torch.eye(dim, dtype=R.dtype)).norm()),
+        "frac_translation": n * float((mean_shift ** 2).sum()) / ss_total,
+        "frac_rotation": (ss_centered - ss_aligned) / ss_total,
+        "frac_aligned": ss_aligned / ss_total,
+    }
+
+
+def loglog_residual(y_norm: np.ndarray, X: np.ndarray) -> tuple[np.ndarray, float]:
+    """Multi-covariate generalization of `freq_residual`: fit log(y) ~ [1, X] over movers (y>0)
+    and return the MAD-z-scored, clipped residual per row (0 for non-movers) plus the fit R^2.
+
+    With X = log1p(dcount, count), the residual is drift *not* explained by popularity churn --
+    the idiosyncratic "meaning changed" signal. R^2 is how much popularity explains.
+    """
+    y_norm = np.asarray(y_norm, dtype=np.float64)
+    X = np.asarray(X, dtype=np.float64)
+    if X.ndim == 1:
+        X = X[:, None]
+    out = np.zeros(y_norm.size, dtype=np.float64)
+    movers = y_norm > 0.0
+    if int(movers.sum()) < X.shape[1] + 3:
+        return out, 0.0
+    yv = np.log(y_norm[movers])
+    A = np.column_stack([np.ones(int(movers.sum())), X[movers]])
+    coef = np.linalg.lstsq(A, yv, rcond=None)[0]
+    resid = yv - A @ coef
+    ss_tot = float(((yv - yv.mean()) ** 2).sum())
+    r2 = 1.0 - float((resid ** 2).sum()) / ss_tot if ss_tot > _EPS else 0.0
+    med = np.median(resid)
+    scale = 1.4826 * np.median(np.abs(resid - med))
+    if scale < _EPS:
+        scale = float(resid.std())
+    if scale < _EPS:
+        return out, r2
+    out[movers] = np.clip((resid - med) / scale, -25.0, 25.0)
+    return out, r2

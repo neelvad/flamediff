@@ -202,6 +202,61 @@ class EmbeddingTableDiff:
 
 
 @dataclass
+class Attribution:
+    """Why a table drifted: a nested decomposition of the clean-survivor drift into global basis
+    drift (rotation + translation), popularity churn, and the idiosyncratic residual."""
+
+    name: str
+    n: int
+    surv_ids: np.ndarray
+    idiosyncratic: np.ndarray  # per-survivor de-confounded drift (aligned, log-log MAD-z)
+    delta_norm: np.ndarray     # raw per-survivor ||delta|| (reference)
+    dcount: np.ndarray
+    frac_translation: float    # energy fractions of total drift; translation+rotation+aligned = 1
+    frac_rotation: float
+    frac_aligned_residual: float
+    mean_shift_norm: float
+    rotation_magnitude: float
+    popularity_r2: float       # how much of the aligned per-id drift popularity explains (log-log)
+
+    @property
+    def frac_global(self) -> float:
+        return self.frac_translation + self.frac_rotation
+
+    @classmethod
+    def empty(cls, name: str) -> Attribution:
+        z = np.zeros(0)
+        return cls(name, 0, z.astype(np.int64), z, z, z.astype(np.int64),
+                   0.0, 0.0, 1.0, 0.0, 0.0, 0.0)
+
+    def summary(self) -> dict:
+        return {
+            "n": self.n,
+            "global": self.frac_global,
+            "translation": self.frac_translation,
+            "rotation": self.frac_rotation,
+            "aligned_residual": self.frac_aligned_residual,
+            "popularity_r2": self.popularity_r2,
+            "rotation_magnitude": self.rotation_magnitude,
+            "mean_shift_norm": self.mean_shift_norm,
+        }
+
+    def top_movers(self, k: int = 10) -> list[tuple]:
+        """Top-k survivors by idiosyncratic (de-confounded) drift -- 'meaning changed'.
+
+        Returns (id, idiosyncratic, delta_norm, dcount).
+        """
+        if self.idiosyncratic.size == 0:
+            return []
+        order = np.argsort(-self.idiosyncratic)[:k]
+        return [
+            (int(self.surv_ids[i]), float(self.idiosyncratic[i]),
+             float(self.delta_norm[i]), int(self.dcount[i]))
+            for i in order
+        ]
+
+
+@dataclass
 class DenseTensorDiff:
     name: str
     delta_norm: float
