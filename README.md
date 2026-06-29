@@ -9,10 +9,11 @@ v1 target: **dynamic managed-collision embedding tables** (recsys / TorchRec MCH
 where the diff is an id-keyed join over checkpoints rather than a row-index subtract.
 
 > **v1 scope (honest limits):**
-> - **In-memory scale.** Weights are mmap-backed, but the id-join and geometry materialize, so
->   it runs comfortably at fixture scale (~tens of thousands of ids), not yet sharded/out-of-core
->   for billion-row tables. The `EmbeddingTable` gather-by-id Protocol is the seam for a future
->   `MmapTable`/`ShardedTable`; only `InMemoryTable` exists today.
+> - **Scale.** Reads both single-device and **sharded (DCP)** TorchRec checkpoints, locally; a
+>   large weight loads **out-of-core** (reassembled into an mmap scratch file, auto by size) so a
+>   bigger-than-RAM checkpoint stays bounded. The remaining limit is the *diff result*: the id-join
+>   and per-id arrays still materialize, so billion-*id* diffs aren't streamed yet (and Stage 2
+>   copies the weight to scratch rather than mmapping the `.distcp` chunks directly).
 > - **Calibration.** The shipped `flamediff/calibration.json` is derived from **clean real-scale
 >   runs** (10 stationary TorchRec MCH runs, dim=64, 2 tables; see its `provenance`). Regenerate
 >   for your own data with `scripts/calibrate_real.py` (Modal) or `scripts/calibrate.py` (synthetic).
