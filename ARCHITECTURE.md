@@ -44,8 +44,11 @@ Two load-bearing boundaries:
     into full tensors. Works because reassembled MCH buffers are structurally identical to
     single-device — **global** slots, **globally-sorted** ids (verified on 2 GPUs). Runs locally
     (DCP single-process; no GPU/torchrec/PG). Maps load to RAM; a weight above `out_of_core_bytes`
-    reassembles into an **mmap scratch** file (bounded RAM) gathered lazily — automatic by size
-    (out-of-core). Stage 2.5 (later): mmap the `.distcp` chunks directly to skip the scratch copy.
+    is read out-of-core (automatic by size). **Stage 2.5 — zero-copy** (`_dcp_zerocopy.py`): DCP
+    stores each tensor storage *uncompressed* inside a torch.save mini-zip per `.distcp`; we walk
+    each chunk's central directory to find the storage entry and **mmap the shard at its raw bytes**,
+    so `gather` pages in only the rows it touches with no copy. Falls back to a reassembled mmap
+    **scratch** copy (Stage 2) on any unexpected framing.
 - `flamediff/diff.py` — the pairwise algorithm.
 
 ## Diff algorithm (per managed-collision table)
@@ -54,7 +57,10 @@ Two load-bearing boundaries:
 2. **Slot-stability split**: survivors whose slot is unchanged are the *clean* set; survivors
    whose slot moved are comparability breaks (eviction inherits the slot's vector — a
    re-admitted id inherits a stranger's embedding), flagged and excluded from learning deltas.
-3. **Clean deltas**: row `||Δ||` and cosine for slot-stable survivors, gathered by id.
+3. **Clean deltas**: row `||Δ||` and cosine for slot-stable survivors, gathered by id — in
+   **batches** (`gather_batch`, default 1<<20) so the dominant `[n, dim]` gather peaks at
+   `batch × dim`, not `n × dim` (Stage 2.5; pairs with the zero-copy mmap weight for a bounded
+   out-of-core diff). Bit-identical to a single-shot gather.
 4. **Frequency-residual score** (the differentiated signal): the popularity confound is that
    `||Δ||` tracks how often an id was trained. `dcount = count_cur - count_prev` (from the LFU
    `_mch_counts`) is the per-interval update count, free in the checkpoint. Over the ids that
