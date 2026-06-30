@@ -163,5 +163,10 @@ runs trajectory → detect → attribute and attaches a `Why` to each calibrated
 `Report` renders to text / JSON / markdown and exposes `worst_severity()`. CLI (Typer):
 `flamediff report <run_dir>` with `--json`, `--md`, `--table`, `--min-severity`, and
 `--fail-on <sev>` — a **CI gate** that exits nonzero past a severity (fail a training run on drift).
-JSON + exit code are the integration seam; a cron/CI wires alerting. `watch` (incremental polling,
-bounded-memory state that keeps only the last checkpoint + scalar series) is the planned fast-follow.
+JSON + exit code are the integration seam; a cron/CI wires alerting.
+
+`flamediff watch <run_dir>` streams **new** anomalies as checkpoints are dropped. `Watcher.poll()`
+ingests new `ckpt_*`, re-detects on the accumulated scalar series, and surfaces each event once;
+attribution is computed per step and cached, and only the **last checkpoint** is held (to diff the
+next) — so memory is bounded regardless of run length. Polling is a cheap `glob`, so `--interval`
+(default 60s) can be raised freely to match checkpoint cadence; `--fail-on` guards a live run.

@@ -29,6 +29,9 @@ flamediff report <run_dir>                    # ranked anomalies, each with a 'w
 flamediff report <run_dir> --min-severity 5   # focus on the strongest
 flamediff report <run_dir> --json --md out.md # machine + shareable outputs
 flamediff report <run_dir> --fail-on 5        # exit nonzero past a severity (CI gate)
+
+flamediff watch <run_dir> --interval 600      # stream NEW anomalies as checkpoints drop
+flamediff watch <run_dir> --fail-on 8         # guard a live run; exit nonzero on severe drift
 ```
 
 Each anomaly reads as *"step N, `table.metric`, 3.1× over the calibrated bar — idiosyncratic
