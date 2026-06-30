@@ -42,12 +42,15 @@ def test_sharded_self_diff_is_zero():
 
 @pytest.mark.integration
 def test_out_of_core_weight_matches_in_ram():
-    # forcing the out-of-core (mmap-scratch) weight path must reassemble identically to RAM.
+    # forcing the out-of-core weight path must gather identically to a full RAM load.
+    from flamediff.adapters._dcp_zerocopy import ZeroCopyShardedWeight
+
     path = _fixture()
     in_ram = ShardedTorchRecMCHAdapter(out_of_core_bytes=10**15).load(path)   # always RAM
-    ooc = ShardedTorchRecMCHAdapter(out_of_core_bytes=0).load(path)           # force mmap scratch
+    ooc = ShardedTorchRecMCHAdapter(out_of_core_bytes=0).load(path)           # force out-of-core
     t_ram = in_ram.embedding_tables["author_id_emb"]
     t_ooc = ooc.embedding_tables["author_id_emb"]
+    assert isinstance(t_ooc._weights, ZeroCopyShardedWeight)  # zero-copy .distcp mmap, not RAM
     assert np.array_equal(t_ram.ids(), t_ooc.ids())
     ids = t_ram.ids()
-    assert torch.equal(t_ram.gather(ids), t_ooc.gather(ids))  # lazy mmap gather == RAM gather
+    assert torch.equal(t_ram.gather(ids), t_ooc.gather(ids))  # zero-copy gather == RAM gather

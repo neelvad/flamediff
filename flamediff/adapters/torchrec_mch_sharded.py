@@ -7,10 +7,10 @@ which -- because MCH shards row-wise with GLOBAL slots and range-partitioned (gl
 shared builder. Runs locally: DCP loads single-process, no GPU / torchrec / process group needed.
 
 Scale: the map (sorted_ids/slots/counts) is ~20x smaller than the weight, so it always loads to
-RAM. A weight larger than ``out_of_core_bytes`` is reassembled into an **mmap-backed scratch file**
-instead (peak RAM stays bounded by DCP's per-chunk buffer); InMemoryTable then gathers rows lazily
-from the mmap. (Cost: a scratch copy of the weight + one streaming read. A future Stage 2.5 could
-mmap the .distcp chunks directly to avoid the copy.)
+RAM. A weight larger than ``out_of_core_bytes`` is read **out-of-core**: zero-copy by mmapping the
+``.distcp`` chunks directly (Stage 2.5, see ``_dcp_zerocopy``), or -- if the on-disk framing isn't
+the expected stored-zip layout -- a reassembled mmap-backed scratch copy (Stage 2). Either way
+InMemoryTable gathers rows lazily; peak RAM is bounded by the rows actually touched.
 """
 from __future__ import annotations
 
@@ -26,6 +26,7 @@ import torch.distributed.checkpoint as dcp
 from torch.distributed.checkpoint import FileSystemReader
 from torch.distributed.checkpoint.metadata import TensorStorageMetadata
 
+from flamediff.adapters._dcp_zerocopy import open_zero_copy_weight
 from flamediff.adapters._torchrec_common import assemble_checkpoint, has_mc_keys
 from flamediff.adapters.base import register
 from flamediff.types import Checkpoint
@@ -72,16 +73,22 @@ class ShardedTorchRecMCHAdapter:
 
     def load(self, path: str) -> Checkpoint:
         md = FileSystemReader(path).read_metadata()
-        target = {}
+        target: dict = {}
+        zero_copy: dict = {}
         for fqn, m in md.state_dict_metadata.items():
             if not isinstance(m, TensorStorageMetadata):
                 continue
-            # large weights -> mmap scratch (lazy); maps and small weights -> RAM
+            # large weights: zero-copy mmap the .distcp chunks; fall back to a scratch copy.
+            # maps and small weights: reassemble into RAM via dcp.load.
             if fqn.endswith(".weight") and _bytes(m) > self.out_of_core_bytes:
-                target[fqn] = _mmap_target(m)
+                try:
+                    zero_copy[fqn] = open_zero_copy_weight(path, md, fqn)
+                except Exception:
+                    target[fqn] = _mmap_target(m)
             else:
                 target[fqn] = torch.empty(tuple(m.size), dtype=m.properties.dtype)
-        dcp.load(target, checkpoint_id=path)  # reassembles shards; big weights stream to scratch
+        dcp.load(target, checkpoint_id=path)  # maps to RAM; any fallback weights to scratch
+        target.update(zero_copy)              # inject the mmap-backed zero-copy weights
         return assemble_checkpoint(target, path)
 
 
