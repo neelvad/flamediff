@@ -19,6 +19,22 @@ where the diff is an id-keyed join over checkpoints rather than a row-index subt
 >   for your own data with `scripts/calibrate_real.py` (Modal) or `scripts/calibrate.py` (synthetic).
 > - **One format.** Only the TorchRec MCH/ZCH adapter exists; static-hash (regime A) is deferred.
 
+## Usage
+
+The product entry point is `flamediff report` — it fuses calibrated anomaly detection with
+attribution over a run's checkpoints, so each flagged event comes with *why* it drifted:
+
+```bash
+flamediff report <run_dir>                    # ranked anomalies, each with a 'why' line
+flamediff report <run_dir> --min-severity 5   # focus on the strongest
+flamediff report <run_dir> --json --md out.md # machine + shareable outputs
+flamediff report <run_dir> --fail-on 5        # exit nonzero past a severity (CI gate)
+```
+
+Each anomaly reads as *"step N, `table.metric`, 3.1× over the calibrated bar — idiosyncratic
+drift (global 2%, popularity 24%, residual 74%); movers …"* (or a churn breakdown for
+insertion/eviction spikes).
+
 ## Development
 
 Managed with [uv](https://docs.astral.sh/uv/) (Python 3.12, pinned in `.python-version`):

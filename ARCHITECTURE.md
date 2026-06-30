@@ -151,3 +151,17 @@ strong confound the raw scorer is fooled (AUC 0.21) while the residual nails it 
 run (modest confound, popularity ≈ 25% of drift) the lift is smaller but real (0.884 → 0.964).
 Honest limit: *coordinated* genuine drift is indistinguishable from basis drift (identifiability).
 Scaling (similarity Procrustes) is a deferred toggle.
+
+## Monitoring report (`report.py`, `cli.py`) — the operated product
+
+One command fuses *when/where* (detection) with *why* (attribution). `build_report(checkpoints)`
+runs trajectory → detect → attribute and attaches a `Why` to each calibrated event by metric kind:
+- **churn** metrics (insert/evict/readmit/slot-move rates) → the diff's churn breakdown;
+- **movement / geometry / scorer** metrics → the table's `Attribution` (global / popularity /
+  idiosyncratic + top movers).
+
+`Report` renders to text / JSON / markdown and exposes `worst_severity()`. CLI (Typer):
+`flamediff report <run_dir>` with `--json`, `--md`, `--table`, `--min-severity`, and
+`--fail-on <sev>` — a **CI gate** that exits nonzero past a severity (fail a training run on drift).
+JSON + exit code are the integration seam; a cron/CI wires alerting. `watch` (incremental polling,
+bounded-memory state that keeps only the last checkpoint + scalar series) is the planned fast-follow.
