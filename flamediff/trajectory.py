@@ -71,23 +71,32 @@ def step_features(cd: CheckpointDiff) -> dict[tuple[str, str], float]:
     return out
 
 
-def diff_trajectory(checkpoints: list[Checkpoint], *, keep_ids: bool = True) -> TrajectoryDiff:
-    """Diff consecutive checkpoints and assemble per-(table, metric) time series."""
-    if len(checkpoints) < 2:
-        raise ValueError("need at least 2 checkpoints to form a trajectory")
-    diffs, rows = [], []
-    for i in range(1, len(checkpoints)):
-        cd = diff_checkpoints(checkpoints[i - 1], checkpoints[i], keep_ids=keep_ids)
-        diffs.append(cd)
-        step = checkpoints[i].step if checkpoints[i].step is not None else i - 1
-        rows.append((i - 1, step, step_features(cd)))
+def build_series(steps: list, diffs: list) -> dict:
+    """Assemble per-(table, metric) MetricSeries from consecutive diffs + per-checkpoint steps.
 
+    Reusable by the incremental watcher: diff `j` spans checkpoints `j` and `j+1`, so its label
+    is `steps[j+1]` (falling back to the index when steps are unknown).
+    """
+    rows = []
+    for j, cd in enumerate(diffs):
+        step = steps[j + 1] if steps[j + 1] is not None else j
+        rows.append((j, step, step_features(cd)))
     index = np.array([r[0] for r in rows], dtype=np.int64)
-    step = np.array([r[1] for r in rows], dtype=np.int64)
+    step_arr = np.array([r[1] for r in rows], dtype=np.int64)
     keys = sorted({k for _, _, feats in rows for k in feats})
     series = {}
     for table, metric in keys:
         vals = np.array([feats.get((table, metric), np.nan) for _, _, feats in rows],
                         dtype=np.float64)
-        series[(table, metric)] = MetricSeries(table, metric, index, step, vals)
-    return TrajectoryDiff(steps=[c.step for c in checkpoints], diffs=diffs, series=series)
+        series[(table, metric)] = MetricSeries(table, metric, index, step_arr, vals)
+    return series
+
+
+def diff_trajectory(checkpoints: list[Checkpoint], *, keep_ids: bool = True) -> TrajectoryDiff:
+    """Diff consecutive checkpoints and assemble per-(table, metric) time series."""
+    if len(checkpoints) < 2:
+        raise ValueError("need at least 2 checkpoints to form a trajectory")
+    diffs = [diff_checkpoints(checkpoints[i - 1], checkpoints[i], keep_ids=keep_ids)
+             for i in range(1, len(checkpoints))]
+    steps = [c.step for c in checkpoints]
+    return TrajectoryDiff(steps=steps, diffs=diffs, series=build_series(steps, diffs))

@@ -7,13 +7,15 @@ renders to text, JSON, or markdown, and exposes `worst_severity()` for a CI gate
 """
 from __future__ import annotations
 
+import glob
 import json
 from dataclasses import dataclass, field
 
 from flamediff import detect as _detect
 from flamediff.attribute import attribute_table
 from flamediff.detect import Event, detect_trajectory
-from flamediff.trajectory import diff_trajectory
+from flamediff.diff import diff_checkpoints
+from flamediff.trajectory import TrajectoryDiff, build_series, diff_trajectory
 from flamediff.types import Attribution, Checkpoint
 
 _CHURN_METRICS = {"inserted_rate", "evicted_rate", "slot_moved_rate", "readmit_rate"}
@@ -40,6 +42,11 @@ class EnrichedEvent:
     @property
     def severity(self) -> float:
         return severity_of(self.event)
+
+    def to_line(self) -> str:
+        e = self.event
+        return (f"  ● step {e.step}  {e.table}.{e.metric}  {self.severity:.1f}×  [{e.method}]\n"
+                f"       why: {self.why.text}")
 
     def to_dict(self) -> dict:
         e = self.event
@@ -86,11 +93,7 @@ class Report:
             lines.append(f"no anomalies (calibrated severity ≥ {self.min_severity:g})")
             return "\n".join(lines)
         lines.append(f"ANOMALIES (calibrated severity ≥ {self.min_severity:g}, most severe first):")
-        for ee in self.events:
-            e = ee.event
-            lines.append(f"  ● step {e.step}  {e.table}.{e.metric}  "
-                         f"{ee.severity:.1f}×  [{e.method}]")
-            lines.append(f"       why: {ee.why.text}")
+        lines += [ee.to_line() for ee in self.events]
         worst = self.events[0]
         lines += ["", f"SUMMARY: {len(self.events)} anomalies across {len(self.tables)} tables; "
                   f"worst step {worst.event.step} ({worst.event.table}.{worst.event.metric} "
@@ -161,11 +164,8 @@ def build_report(
     det = detect_trajectory(traj)
     cal = _detect._DEFAULT_CALIBRATION
 
-    attr_cache: dict = {}
-    events = [e for e in det.events
-              if severity_of(e) >= min_severity and (table is None or e.table == table)]
-    events.sort(key=severity_of, reverse=True)
-    enriched = [EnrichedEvent(e, _explain(e, checkpoints, traj.diffs, attr_cache)) for e in events]
+    enriched = _enrich(det.events, checkpoints, traj.diffs,
+                       min_severity=min_severity, table=table, attr_cache={})
 
     tables = sorted(set(checkpoints[0].embedding_tables) | set(checkpoints[0].dense_tensors))
     return Report(
@@ -177,3 +177,63 @@ def build_report(
         min_severity=min_severity,
         events=enriched,
     )
+
+
+def _enrich(events: list[Event], checkpoints: list[Checkpoint], diffs: list, *,
+            min_severity: float, table: str | None, attr_cache: dict) -> list[EnrichedEvent]:
+    sel = [e for e in events
+           if severity_of(e) >= min_severity and (table is None or e.table == table)]
+    sel.sort(key=severity_of, reverse=True)
+    return [EnrichedEvent(e, _explain(e, checkpoints, diffs, attr_cache)) for e in sel]
+
+
+class Watcher:
+    """Incremental drift watch over a run dir: `poll()` ingests any new ``ckpt_*`` and returns the
+    events surfaced for the first time. Bounded memory -- it keeps the scalar diffs + per-step
+    attribution and only the *last* checkpoint (to diff the next against), never the whole run.
+    """
+
+    def __init__(self, run_dir: str, *, table: str | None = None, min_severity: float = 1.0):
+        self.run_dir = run_dir
+        self.table = table
+        self.min_severity = min_severity
+        self._last: Checkpoint | None = None
+        self._steps: list = []
+        self._diffs: list = []
+        self._attr_cache: dict = {}       # (table, index) -> Attribution, pre-filled per step
+        self._seen: set = set()           # event keys already surfaced
+        self._processed: set = set()      # checkpoint paths already ingested
+
+    def poll(self) -> list[EnrichedEvent]:
+        from flamediff import load_checkpoint
+
+        for path in sorted(glob.glob(f"{self.run_dir}/ckpt_*")):
+            if path in self._processed:
+                continue
+            self._processed.add(path)
+            ck = load_checkpoint(path)
+            if self._last is None:
+                self._last, self._steps = ck, [ck.step]
+                continue
+            idx = len(self._diffs)
+            cd = diff_checkpoints(self._last, ck)
+            self._diffs.append(cd)
+            self._steps.append(ck.step)
+            for name, td in cd.embedding_diffs.items():
+                self._attr_cache[(name, idx)] = attribute_table(
+                    self._last.embedding_tables[name], ck.embedding_tables[name], td)
+            self._last = ck
+
+        if not self._diffs:
+            return []
+        traj = TrajectoryDiff(self._steps, self._diffs, build_series(self._steps, self._diffs))
+        det = detect_trajectory(traj)
+        fresh = []
+        for ee in _enrich(det.events, [], self._diffs, min_severity=self.min_severity,
+                          table=self.table, attr_cache=self._attr_cache):
+            e = ee.event
+            key = (e.index, e.table, e.metric, e.method)
+            if key not in self._seen:
+                self._seen.add(key)
+                fresh.append(ee)
+        return fresh

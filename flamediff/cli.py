@@ -48,6 +48,38 @@ def report(
         raise typer.Exit(1)
 
 
+@app.command()
+def watch(
+    run_dir: str = typer.Argument(..., help="Run dir; new ckpt_* are picked up as they land."),
+    interval: float = typer.Option(
+        60.0, "--interval", help="Seconds between polls (a cheap glob — raise it freely)."),
+    min_severity: float = typer.Option(
+        1.0, "--min-severity", help="Only surface events at/above this calibrated severity."),
+    table: str | None = typer.Option(None, "--table", help="Restrict to one embedding table."),
+    fail_on: float | None = typer.Option(
+        None, "--fail-on", help="Exit nonzero when an event reaches this severity (guard a run)."),
+    max_polls: int = typer.Option(0, "--max-polls", help="Stop after N polls (0 = forever)."),
+) -> None:
+    """Stream NEW calibrated anomalies (with their why) as checkpoints are dropped."""
+    import time
+
+    from flamediff.report import Watcher
+
+    watcher = Watcher(run_dir, table=table, min_severity=min_severity)
+    typer.echo(f"watching {run_dir} — polling every {interval:g}s (Ctrl-C to stop)", err=True)
+    polls = 0
+    while True:
+        for ee in watcher.poll():
+            typer.echo(ee.to_line())
+            if fail_on is not None and ee.severity >= fail_on:
+                typer.echo(f"severity {ee.severity:.1f} ≥ {fail_on:g} — failing.", err=True)
+                raise typer.Exit(1)
+        polls += 1
+        if max_polls and polls >= max_polls:
+            break
+        time.sleep(interval)
+
+
 def main() -> None:
     app()
 

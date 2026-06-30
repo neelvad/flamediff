@@ -1,5 +1,6 @@
 import glob
 import json
+import os
 
 import pytest
 from typer.testing import CliRunner
@@ -7,9 +8,19 @@ from typer.testing import CliRunner
 from flamediff import load_checkpoint
 from flamediff.cli import app
 from flamediff.detect import Event
-from flamediff.report import build_report, severity_of
+from flamediff.report import Watcher, build_report, severity_of
 
 RUN = "fixtures/run_1782312586"
+
+
+def _ekey(ee):
+    e = ee.event
+    return (e.index, e.table, e.metric, e.method)
+
+
+def _link(paths, dst):
+    for p in paths:
+        os.symlink(os.path.abspath(p), os.path.join(dst, os.path.basename(p)))
 
 
 def _run():
@@ -69,3 +80,39 @@ def test_cli_json_output():
     assert res.exit_code == 0
     payload = json.loads(res.stdout)
     assert payload["run"] == RUN and payload["events"]
+
+
+@pytest.mark.integration
+def test_watcher_surfaces_new_events_once(tmp_path):
+    src = sorted(glob.glob(f"{RUN}/ckpt_*"))
+    if len(src) < 10:
+        pytest.skip("no trajectory fixture")
+    run = tmp_path / "run"
+    run.mkdir()
+    w = Watcher(str(run), min_severity=1.0)
+
+    _link(src[:6], run)
+    first = w.poll()
+    _link(src[6:], run)             # the later batch carries the saturation regime change
+    second = w.poll()
+
+    assert second                   # new checkpoints surface new events
+    assert w.poll() == []           # no new checkpoints -> nothing surfaced
+    assert {_ekey(e) for e in first}.isdisjoint({_ekey(e) for e in second})  # never twice
+    assert not isinstance(w._last, list)   # bounded: keeps only the last checkpoint
+    assert len(w._diffs) == len(src) - 1
+
+
+@pytest.mark.integration
+def test_cli_watch_max_polls_and_gate(tmp_path):
+    src = sorted(glob.glob(f"{RUN}/ckpt_*"))
+    if len(src) < 5:
+        pytest.skip("no trajectory fixture")
+    run = tmp_path / "run"
+    run.mkdir()
+    _link(src, run)
+    runner = CliRunner()
+    res = runner.invoke(app, ["watch", str(run), "--max-polls", "1", "--min-severity", "5"])
+    assert res.exit_code == 0 and "step" in res.stdout         # one poll, surfaced events, exited
+    gated = runner.invoke(app, ["watch", str(run), "--max-polls", "1", "--fail-on", "5"])
+    assert gated.exit_code == 1                                 # a >=5x event trips the guard
