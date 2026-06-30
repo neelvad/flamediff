@@ -76,6 +76,13 @@ This is where the low-false-positive / calibration work pays off — alert fatig
   branch; reintroduces forward passes + canary curation, so it's a heavier, different thing.
   **Decoupled** from A/B/C — it's a self-contained experiment that can run as a parallel,
   time-boxed spike whenever the research signal is wanted, not strictly after the product is built.
+- **F — visualization web UI.** A non-TUI, browser-based view of a run's drift — *TensorBoard /
+  Weights & Biases, but for checkpoints*: the per-(table, metric) trajectory series with
+  calibrated-anomaly markers, drill-down into an event's attribution (global / popularity /
+  idiosyncratic + the mover ids), and the churn partition over time. Consumes the same `Report` /
+  trajectory JSON the CLI already emits (so it's a presentation layer over a stable seam — likely a
+  small static frontend reading `flamediff report --json`, or a thin `flamediff serve`). Turns the
+  product from "CLI + JSON" into something you *browse* — the natural demo/portfolio surface.
 
 ## Non-goals (for now)
 
