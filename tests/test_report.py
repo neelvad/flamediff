@@ -1,0 +1,71 @@
+import glob
+import json
+
+import pytest
+from typer.testing import CliRunner
+
+from flamediff import load_checkpoint
+from flamediff.cli import app
+from flamediff.detect import Event
+from flamediff.report import build_report, severity_of
+
+RUN = "fixtures/run_1782312586"
+
+
+def _run():
+    if len(glob.glob(f"{RUN}/ckpt_*")) < 2:
+        pytest.skip("no trajectory fixture under fixtures/run_*")
+    return [load_checkpoint(p) for p in sorted(glob.glob(f"{RUN}/ckpt_*"))]
+
+
+def test_severity_of_prefers_calibrated():
+    base = dict(index=0, step=10, table="t", metric="m", value=1.0, baseline=0.0,
+                direction="down", method="robust_z")
+    assert severity_of(Event(score=-3.0, calibrated_severity=2.5, **base)) == 2.5
+    assert severity_of(Event(score=-3.0, calibrated_severity=None, **base)) == 3.0
+
+
+@pytest.mark.integration
+def test_build_report_fuses_detection_and_attribution():
+    rep = build_report(_run(), run=RUN, min_severity=1.0)
+    assert rep.events  # the saturation regime change is anomalous
+    assert {ee.why.kind for ee in rep.events} <= {"churn", "drift", "geometry", "dense"}
+    assert "churn" in {ee.why.kind for ee in rep.events}  # insertion/eviction spikes
+
+    sevs = [ee.severity for ee in rep.events]
+    assert sevs == sorted(sevs, reverse=True)            # sorted by severity desc
+    assert rep.worst_severity() == sevs[0]
+
+    churn = next(ee for ee in rep.events if ee.why.kind == "churn")
+    assert churn.why.detail["churn"]["inserted"] >= 0    # structured churn breakdown
+    drift = [ee for ee in rep.events if ee.why.kind == "drift"]
+    if drift:
+        assert "top_movers" in drift[0].why.detail        # attribution attached
+
+
+@pytest.mark.integration
+def test_report_json_and_markdown():
+    rep = build_report(_run(), run=RUN)
+    d = json.loads(rep.to_json())
+    assert d["n_events"] == len(rep.events)
+    assert d["worst_severity"] == round(rep.worst_severity(), 3)
+    assert rep.to_markdown().startswith("# flamediff report")
+
+
+@pytest.mark.integration
+def test_cli_report_and_gate():
+    _run()  # skip-guard
+    runner = CliRunner()
+    assert "ANOMALIES" in runner.invoke(app, ["report", RUN]).stdout
+    assert runner.invoke(app, ["report", RUN, "--fail-on", "5"]).exit_code == 1
+    assert runner.invoke(app, ["report", RUN, "--fail-on", "9999"]).exit_code == 0
+    assert runner.invoke(app, ["report", "fixtures"]).exit_code == 2  # <2 checkpoints
+
+
+@pytest.mark.integration
+def test_cli_json_output():
+    _run()
+    res = CliRunner().invoke(app, ["report", RUN, "--json", "--min-severity", "3"])
+    assert res.exit_code == 0
+    payload = json.loads(res.stdout)
+    assert payload["run"] == RUN and payload["events"]

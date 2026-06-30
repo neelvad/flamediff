@@ -8,12 +8,13 @@ version = "0.0.1"
 description = "Structural drift diffing for model checkpoints (recsys managed-collision embedding tables)"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = ["torch>=2.0", "numpy>=1.24", "ruptures>=1.1"]
+dependencies = ["torch>=2.0", "numpy>=1.24", "ruptures>=1.1", "typer>=0.12"]
 
 [project.optional-dependencies]
 tui = ["textual>=0.60"]
 
 [project.scripts]
+flamediff = "flamediff.cli:main"
 flamediff-tui = "flamediff.tui:main"
 
 [dependency-groups]
@@ -34,3 +35,7 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.flake8-bugbear]
+# Typer/Click declare CLI params via calls in argument defaults -- that's the idiom, not a bug.
+extend-immutable-calls = ["typer.Option", "typer.Argument"]

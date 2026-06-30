@@ -158,6 +158,7 @@ class Calibration:
 
     def __init__(self, params: dict):
         self.target_fpr = params.get("target_fpr")
+        self.provenance = params.get("provenance")
         self._methods = params.get("methods", {})
 
     def threshold(self, method: str) -> float:
