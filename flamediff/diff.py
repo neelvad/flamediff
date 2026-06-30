@@ -19,6 +19,7 @@ from flamediff.types import (
 )
 
 _GEOM_SAMPLE = 8192  # cap rows gathered for the covariance geometry (avoids full-table reads)
+_GATHER_BATCH = 1 << 20  # survivors gathered per batch -> bounds peak to batch x dim (out-of-core)
 
 
 def _geom(table: EmbeddingTable) -> GeomStats:
@@ -38,8 +39,28 @@ def _geom(table: EmbeddingTable) -> GeomStats:
     )
 
 
+def _streamed_row_stats(
+    prev: EmbeddingTable, cur: EmbeddingTable, ids: np.ndarray, batch: int
+) -> tuple[np.ndarray, np.ndarray]:
+    """Per-id ||delta|| and cosine, gathering survivors in batches so the [n, dim] gather (the
+    dominant memory) never materializes whole -- peak stays batch x dim. Result is identical to a
+    single-shot gather. (The [n]-length outputs are the next limit at true billion-id scale -- a
+    streaming t-digest for the percentile reductions would remove it; noted, not built.)"""
+    n = int(ids.size)
+    delta_norm = np.empty(n, dtype=np.float64)
+    cosine = np.empty(n, dtype=np.float64)
+    for lo in range(0, n, batch):
+        sl = slice(lo, min(lo + batch, n))
+        wp = prev.gather(ids[sl]).float()
+        wc = cur.gather(ids[sl]).float()
+        delta_norm[sl] = stats.row_delta_norm(wp, wc).cpu().numpy()
+        cosine[sl] = stats.row_cosine(wp, wc).cpu().numpy()
+    return delta_norm, cosine
+
+
 def diff_table(
-    prev: EmbeddingTable, cur: EmbeddingTable, *, keep_ids: bool = True
+    prev: EmbeddingTable, cur: EmbeddingTable, *, keep_ids: bool = True,
+    gather_batch: int = _GATHER_BATCH,
 ) -> EmbeddingTableDiff:
     ids_prev, ids_cur = prev.ids(), cur.ids()
     survivors = np.intersect1d(ids_prev, ids_cur, assume_unique=True)
@@ -61,10 +82,7 @@ def diff_table(
     readmitted = survivors[slot_stable & (dcount_all < 0)]
 
     if stable.size:
-        Wp = prev.gather(stable).float()
-        Wc = cur.gather(stable).float()
-        delta_norm = stats.row_delta_norm(Wp, Wc).cpu().numpy()
-        cosine = stats.row_cosine(Wp, Wc).cpu().numpy()
+        delta_norm, cosine = _streamed_row_stats(prev, cur, stable, gather_batch)
         dcount = dcount_all[clean_mask]
         freq_resid = stats.freq_residual(delta_norm, dcount)
         frozen = stats.frozen_score(delta_norm, dcount)

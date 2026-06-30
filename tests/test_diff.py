@@ -105,3 +105,21 @@ def test_diff_dense_basic():
     assert dd.delta_norm > 0
     assert -1.0001 <= dd.cosine <= 1.0001
     assert dd.eff_rank_cur > 0 and dd.spectral_norm_cur > 0
+
+
+def test_streaming_gather_matches_single_shot(make_table):
+    # batching the survivor gather must be bit-identical to a single-shot gather.
+    rng = np.random.default_rng(0)
+    n, dim = 200, 8
+    ids, slots = list(range(n)), list(range(n))
+    Wp = torch.from_numpy(rng.standard_normal((n, dim)).astype(np.float32))
+    Wc = Wp + torch.from_numpy((0.1 * rng.standard_normal((n, dim))).astype(np.float32))
+    c1 = rng.integers(1, 50, size=n).astype(np.int64)
+    c2 = (c1 + rng.integers(0, 10, size=n)).astype(np.int64)
+    prev = make_table(ids=ids, slots=slots, counts=c1.tolist(), weights=Wp, num_slots=n)
+    cur = make_table(ids=ids, slots=slots, counts=c2.tolist(), weights=Wc, num_slots=n)
+    batched = diff_table(prev, cur, gather_batch=7)       # many small batches
+    single = diff_table(prev, cur, gather_batch=10**9)    # single shot
+    assert batched.n_slot_stable == n
+    for arr in ("delta_norm", "cosine", "freq_resid", "frozen_score"):
+        assert np.array_equal(getattr(batched, arr), getattr(single, arr)), arr
