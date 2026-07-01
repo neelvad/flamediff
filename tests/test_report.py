@@ -147,8 +147,11 @@ def test_watcher_surfaces_new_events_once(tmp_path):
     assert second                   # new checkpoints surface new events
     assert w.poll() == []           # no new checkpoints -> nothing surfaced
     assert {_ekey(e) for e in first}.isdisjoint({_ekey(e) for e in second})  # never twice
-    assert not isinstance(w._last, list)   # bounded: keeps only the last checkpoint
-    assert len(w._diffs) == len(src) - 1
+    # bounded in run length: only the last checkpoint + reduced per-step forms are retained
+    assert w._last is not None and not isinstance(w._last, list)  # holds one checkpoint's weights
+    assert len(w._rows) == len(src) - 1                           # one scalar-features row per step
+    assert not hasattr(w, "_diffs")                               # full per-id diffs not retained
+    assert all(len(e["attr"][1]) <= 10 for e in w._why.values())  # mover ids capped (no arrays)
 
 
 @pytest.mark.integration

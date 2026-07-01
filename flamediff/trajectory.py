@@ -71,16 +71,11 @@ def step_features(cd: CheckpointDiff) -> dict[tuple[str, str], float]:
     return out
 
 
-def build_series(steps: list, diffs: list) -> dict:
-    """Assemble per-(table, metric) MetricSeries from consecutive diffs + per-checkpoint steps.
-
-    Reusable by the incremental watcher: diff `j` spans checkpoints `j` and `j+1`, so its label
-    is `steps[j+1]` (falling back to the index when steps are unknown).
+def series_from_rows(rows: list) -> dict:
+    """Assemble per-(table, metric) MetricSeries from precomputed feature rows -- each row is
+    ``(index, step, {(table, metric): value})``. This lets the incremental watcher keep only the
+    scalar step features per step (a few floats), never the diffs' per-id arrays.
     """
-    rows = []
-    for j, cd in enumerate(diffs):
-        step = steps[j + 1] if steps[j + 1] is not None else j
-        rows.append((j, step, step_features(cd)))
     index = np.array([r[0] for r in rows], dtype=np.int64)
     step_arr = np.array([r[1] for r in rows], dtype=np.int64)
     keys = sorted({k for _, _, feats in rows for k in feats})
@@ -90,6 +85,13 @@ def build_series(steps: list, diffs: list) -> dict:
                         dtype=np.float64)
         series[(table, metric)] = MetricSeries(table, metric, index, step_arr, vals)
     return series
+
+
+def build_series(steps: list, diffs: list) -> dict:
+    """Series from consecutive diffs + per-checkpoint steps (diff j spans checkpoints j and j+1)."""
+    rows = [(j, steps[j + 1] if steps[j + 1] is not None else j, step_features(cd))
+            for j, cd in enumerate(diffs)]
+    return series_from_rows(rows)
 
 
 def diff_trajectory(checkpoints: list[Checkpoint], *, keep_ids: bool = True) -> TrajectoryDiff:

@@ -17,8 +17,8 @@ from flamediff import detect as _detect
 from flamediff.attribute import attribute_table
 from flamediff.detect import Event, detect_trajectory
 from flamediff.diff import diff_checkpoints
-from flamediff.trajectory import TrajectoryDiff, build_series, diff_trajectory
-from flamediff.types import Attribution, Checkpoint
+from flamediff.trajectory import TrajectoryDiff, diff_trajectory, series_from_rows, step_features
+from flamediff.types import Checkpoint
 
 _CHURN_METRICS = {"inserted_rate", "evicted_rate", "slot_moved_rate", "readmit_rate"}
 _GEOMETRY_METRICS = {"effective_rank", "anisotropy", "mean_row_norm"}
@@ -124,43 +124,39 @@ class Report:
         return "\n".join(out) + "\n"
 
 
-def _explain(e: Event, checkpoints: list[Checkpoint], diffs: list,
-             attr_cache: dict) -> Why:
-    cd = diffs[e.index]
-    td = cd.embedding_diffs.get(e.table)
-    if td is None:  # a dense tensor metric
+def _why_ctx_entry(prev_table, cur_table, td) -> dict:
+    """Reduce a table diff + its attribution to the small why-context the report needs: the churn
+    summary (scalars) and the attribution summary (scalars) + top movers (ids) -- no per-id arrays.
+    This is what the watcher retains per (table, step) instead of the full diff/attribution."""
+    attr = attribute_table(prev_table, cur_table, td)
+    return {"churn": td.churn_summary(),
+            "attr": (attr.summary(), [int(m[0]) for m in attr.top_movers(10)])}
+
+
+def _explain(e: Event, ctx: dict | None) -> Why:
+    """Build the *why* for an event from its reduced context (from ``_why_ctx_entry``), or None
+    for a dense-tensor metric (no managed-collision diff for that table)."""
+    if ctx is None:
         return Why("dense", f"{e.table} {e.direction} ({e.value:.3g} vs {e.baseline:.3g})")
 
     if e.metric in _CHURN_METRICS:
-        c = td.churn_summary()
+        c = ctx["churn"]
         return Why("churn",
                    f"churn {e.direction}: {c['inserted']} inserted / {c['evicted']} evicted / "
                    f"{c['readmitted']} re-admitted / {c['slot_moved']} slot-moved",
                    {"churn": c})
 
-    attr = _attribution(e.table, e.index, checkpoints, diffs, attr_cache)
-    movers = ", ".join(str(m[0]) for m in attr.top_movers(5))
-    g, p, i = attr.frac_global, attr.popularity_r2, attr.frac_aligned_residual
+    summary, movers = ctx["attr"]
+    g, p, i = summary["global"], summary["popularity_r2"], summary["aligned_residual"]
     if e.metric in _GEOMETRY_METRICS:
         return Why("geometry",
                    f"geometry shift ({e.value:.3g} vs {e.baseline:.3g}); "
-                   f"global basis drift {g:.0%}, rotation_mag {attr.rotation_magnitude:.2g}",
-                   attr.summary())
+                   f"global basis drift {g:.0%}, rotation_mag {summary['rotation_magnitude']:.2g}",
+                   summary)
     return Why("drift",
                f"idiosyncratic drift (global {g:.0%}, popularity r²={p:.2f}, "
-               f"residual {i:.0%}); movers {movers}",
-               {**attr.summary(), "top_movers": [m[0] for m in attr.top_movers(10)]})
-
-
-def _attribution(table: str, index: int, checkpoints: list[Checkpoint], diffs: list,
-                 cache: dict) -> Attribution:
-    key = (table, index)
-    if key not in cache:
-        td = diffs[index].embedding_diffs[table]
-        prev = checkpoints[index].embedding_tables[table]
-        cur = checkpoints[index + 1].embedding_tables[table]
-        cache[key] = attribute_table(prev, cur, td)
-    return cache[key]
+               f"residual {i:.0%}); movers {', '.join(str(m) for m in movers[:5])}",
+               {**summary, "top_movers": movers})
 
 
 def build_report(
@@ -172,9 +168,18 @@ def build_report(
     det = detect_trajectory(traj)
     cal = _detect._DEFAULT_CALIBRATION
 
-    enriched = _enrich(det.events, checkpoints, traj.diffs,
-                       min_severity=min_severity, table=table, attr_cache={})
+    ctx_cache: dict = {}
 
+    def ctx_of(tbl: str, index: int) -> dict | None:
+        key = (tbl, index)
+        if key not in ctx_cache:
+            td = traj.diffs[index].embedding_diffs.get(tbl)
+            ctx_cache[key] = None if td is None else _why_ctx_entry(
+                checkpoints[index].embedding_tables[tbl],
+                checkpoints[index + 1].embedding_tables[tbl], td)
+        return ctx_cache[key]
+
+    enriched = _enrich(det.events, ctx_of, min_severity=min_severity, table=table)
     series = _series_payload(traj.series, table)
 
     tables = sorted(set(checkpoints[0].embedding_tables) | set(checkpoints[0].dense_tensors))
@@ -190,12 +195,12 @@ def build_report(
     )
 
 
-def _enrich(events: list[Event], checkpoints: list[Checkpoint], diffs: list, *,
-            min_severity: float, table: str | None, attr_cache: dict) -> list[EnrichedEvent]:
+def _enrich(events: list[Event], ctx_of, *, min_severity: float,
+            table: str | None) -> list[EnrichedEvent]:
     sel = [e for e in events
            if severity_of(e) >= min_severity and (table is None or e.table == table)]
     sel.sort(key=severity_of, reverse=True)
-    return [EnrichedEvent(e, _explain(e, checkpoints, diffs, attr_cache)) for e in sel]
+    return [EnrichedEvent(e, _explain(e, ctx_of(e.table, e.index))) for e in sel]
 
 
 def _series_payload(series_map: dict, table: str | None) -> list:
@@ -211,8 +216,12 @@ def _series_payload(series_map: dict, table: str | None) -> list:
 
 class Watcher:
     """Incremental drift watch over a run dir: `poll()` ingests any new ``ckpt_*`` and returns the
-    events surfaced for the first time. Bounded memory -- it keeps the scalar diffs + per-step
-    attribution and only the *last* checkpoint (to diff the next against), never the whole run.
+    events surfaced for the first time.
+
+    Bounded in run length: per step it keeps only the scalar step-features (for the series) and a
+    reduced per-(table, step) why-context (churn summary + attribution summary + <=10 mover ids) --
+    never the diffs' or attribution's per-id arrays. Only the *last* checkpoint is held (to diff the
+    next). So memory grows as O(steps x tables x small), and holds at most one checkpoint's weights.
     """
 
     def __init__(self, run_dir: str, *, table: str | None = None, min_severity: float = 1.0):
@@ -220,9 +229,8 @@ class Watcher:
         self.table = table
         self.min_severity = min_severity
         self._last: Checkpoint | None = None
-        self._steps: list = []
-        self._diffs: list = []
-        self._attr_cache: dict = {}       # (table, index) -> Attribution, pre-filled per step
+        self._rows: list = []             # (index, step, step_features) per step -> the series
+        self._why: dict = {}              # (table, index) -> reduced why-context (scalars + ids)
         self._events: list = []           # all current enriched events (for current_report)
         self._seen: set = set()           # event keys already surfaced
         self._processed: set = set()      # checkpoint paths already ingested
@@ -236,23 +244,24 @@ class Watcher:
             self._processed.add(path)
             ck = load_checkpoint(path)
             if self._last is None:
-                self._last, self._steps = ck, [ck.step]
+                self._last = ck
                 continue
-            idx = len(self._diffs)
+            idx = len(self._rows)
             cd = diff_checkpoints(self._last, ck)
-            self._diffs.append(cd)
-            self._steps.append(ck.step)
+            step = ck.step if ck.step is not None else idx
+            self._rows.append((idx, step, step_features(cd)))
             for name, td in cd.embedding_diffs.items():
-                self._attr_cache[(name, idx)] = attribute_table(
+                self._why[(name, idx)] = _why_ctx_entry(
                     self._last.embedding_tables[name], ck.embedding_tables[name], td)
             self._last = ck
+            # cd (and its per-id arrays) is now dropped -- only the reduced forms above are kept.
 
-        if not self._diffs:
+        if not self._rows:
             return []
-        traj = TrajectoryDiff(self._steps, self._diffs, build_series(self._steps, self._diffs))
+        traj = TrajectoryDiff([], [], series_from_rows(self._rows))
         det = detect_trajectory(traj)
-        self._events = _enrich(det.events, [], self._diffs, min_severity=self.min_severity,
-                               table=self.table, attr_cache=self._attr_cache)
+        self._events = _enrich(det.events, lambda t, i: self._why.get((t, i)),
+                               min_severity=self.min_severity, table=self.table)
         fresh = []
         for ee in self._events:
             e = ee.event
@@ -264,8 +273,7 @@ class Watcher:
 
     def current_report(self) -> Report:
         """A full Report snapshot of the watcher's current state (for `flamediff serve`)."""
-        series = _series_payload(build_series(self._steps, self._diffs), self.table) \
-            if self._diffs else []
+        series = _series_payload(series_from_rows(self._rows), self.table) if self._rows else []
         cal = _detect._DEFAULT_CALIBRATION
         tables = sorted(self._last.embedding_tables) if self._last is not None else []
         return Report(
