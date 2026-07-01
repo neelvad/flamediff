@@ -54,3 +54,22 @@ def test_out_of_core_weight_matches_in_ram():
     assert np.array_equal(t_ram.ids(), t_ooc.ids())
     ids = t_ram.ids()
     assert torch.equal(t_ram.gather(ids), t_ooc.gather(ids))  # zero-copy gather == RAM gather
+
+
+@pytest.mark.integration
+def test_out_of_core_falls_back_to_scratch(monkeypatch):
+    # if the .distcp framing is ever unexpected, zero-copy must degrade to the scratch reassembly.
+    from flamediff.adapters._dcp_zerocopy import ZeroCopyShardedWeight
+
+    path = _fixture()
+    ref = ShardedTorchRecMCHAdapter(out_of_core_bytes=10**15).load(path)  # RAM reference
+
+    def boom(*a, **k):
+        raise ValueError("simulated unexpected .distcp framing")
+
+    monkeypatch.setattr("flamediff.adapters._dcp_zerocopy.open_zero_copy_weight", boom)
+    fb = ShardedTorchRecMCHAdapter(out_of_core_bytes=0).load(path)  # zero-copy fails -> scratch
+    t_ref, t_fb = ref.embedding_tables["author_id_emb"], fb.embedding_tables["author_id_emb"]
+    assert not isinstance(t_fb._weights, ZeroCopyShardedWeight)  # took the scratch path
+    ids = t_ref.ids()
+    assert torch.equal(t_ref.gather(ids), t_fb.gather(ids))      # still identical to RAM
