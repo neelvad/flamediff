@@ -62,7 +62,8 @@ def main() -> None:
     planted_surv = np.isin(inj.surv_ids, planted)
     auc_raw = _auc(inj.delta_norm, planted_surv)
     auc_idio = _auc(attr.idiosyncratic, planted_surv)
-    print(f"\ninjection validation (plant {planted.size} typical-sized changes in low-traffic ids):")
+    print(f"\ninjection validation (plant {planted.size} typical-sized changes in "
+          "low-traffic ids):")
     print(f"  recover via raw ||delta||  AUC={auc_raw:.3f}")
     print(f"  recover via de-confounded  AUC={auc_idio:.3f}   (lift {auc_idio - auc_raw:+.3f})")
 

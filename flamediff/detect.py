@@ -35,7 +35,7 @@ class Event:
     score: float       # signed severity (robust-z units / standardized shift)
     direction: str     # "up" | "down"
     method: str
-    calibrated_severity: float | None = None  # null p-value; set when calibration is active
+    calibrated_severity: float | None = None  # severity / calibrated threshold; set when calibrated
 
 
 @dataclass

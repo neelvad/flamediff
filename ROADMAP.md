@@ -18,7 +18,17 @@ Principles carried through every version: the diff core stays **pure-measurement
 stay **thin**; **calibrate everything** (report drift in noise-floor units); ship a result note
 per milestone.
 
-## v0.1 — validated prototype (where we are)
+## Status (current)
+
+**Shipped A→B→C and beyond.** v1.0 (sharded DCP read, zero-copy out-of-core `.distcp` mmap,
+streaming-gather diff, real-data calibration), an intrinsic **attribution "why"** (de-confounded
+global / popularity / idiosyncratic, injection-validated — this is what "B" became; the external
+**event-log join** originally sketched as v1.5 is still deferred), and v2.0 **monitoring** (`report`
+/ `watch` / `serve`, static + live HTML dashboard, CI gate; public repo + live demo). The milestone
+sections below are kept for history. Current frontier: **branch E** (behavioral probes) + smaller
+polish (t-digest streaming reductions, scaling-Procrustes, static-hash format).
+
+## v0.1 — validated prototype  ·  *shipped (history below)*
 
 The full pipeline exists and is validated end-to-end on generated TorchRec MCH checkpoints:
 adapter → id-keyed diff (de-confounded frequency-residual + frozen scorers, geometry,
@@ -31,7 +41,7 @@ engineering and scope, not research.
 
 Honest limits: in-memory scale (~10⁴ ids), one format (TorchRec MCH/ZCH), synthetic calibration.
 
-## v1.0 — real-scale analyzer  · *the gate*
+## v1.0 — real-scale analyzer  · *the gate*  ·  ✓ shipped
 
 Make it run on actual production checkpoints. Nothing else matters until this is true.
 - `ShardedTable` behind the existing `gather(ids)` Protocol; read **sharded TorchRec DMP**
@@ -43,7 +53,7 @@ Make it run on actual production checkpoints. Nothing else matters until this is
 *Result to ship:* it diffs + detects on a real production-scale table, with perf numbers.
 *Gating risk:* the real distributed-systems work — the architecture supports it, it's execution.
 
-## v1.5 — correlational "why"
+## v1.5 — correlational "why"  ·  *reshaped: shipped intrinsic attribution instead; event-log join deferred*
 
 Turn "what moved" into "what it coincides with" — the actionability jump.
 - A thin **event-log join**: the user supplies a timestamped event stream (config / data-shard /
@@ -54,7 +64,7 @@ Turn "what moved" into "what it coincides with" — the actionability jump.
 *Result to ship:* "anomaly at step N coincides with event E (surprise p < x)."
 *Dependency:* only as good as whether the run emits a joinable event log.
 
-## v2.0 — monitoring product
+## v2.0 — monitoring product  ·  ✓ shipped (report / watch / serve; notifications still TODO)
 
 From "a tool I run" to "a system that watches for me."
 - A runner over each checkpoint drop; **persist trajectory history** (real detection runway +

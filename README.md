@@ -1,7 +1,7 @@
 # flamediff
 
-A tool for tracking structural changes across raw model checkpoints (PyTorch /
-safetensors) dropped over a training run — reading weights off disk, no forward pass.
+A tool for detecting and attributing structural drift across raw model checkpoints dropped over a
+training run — reading weights off disk, no forward pass.
 See [`plan.md`](plan.md) for the design, [`ROADMAP.md`](ROADMAP.md) for the product plan, and
 [`ARCHITECTURE.md`](ARCHITECTURE.md) for the built system.
 
@@ -9,8 +9,9 @@ See [`plan.md`](plan.md) for the design, [`ROADMAP.md`](ROADMAP.md) for the prod
 (`flamediff report --html`): trajectory sparklines with anomaly markers, ranked events, and
 drill-down into each event's *why*. Hover a chart for the checkpoint step + value.
 
-v1 target: **dynamic managed-collision embedding tables** (recsys / TorchRec MCH-ZCH),
-where the diff is an id-keyed join over checkpoints rather than a row-index subtract.
+**Supported format (the one it reads today):** dynamic managed-collision embedding tables (recsys /
+TorchRec MCH-ZCH), from single-device `state_dict`s and sharded DCP checkpoints — the diff is an
+id-keyed join over checkpoints rather than a row-index subtract.
 
 > **v1 scope (honest limits):**
 > - **Scale.** Reads both single-device and **sharded (DCP)** TorchRec checkpoints, locally; a
