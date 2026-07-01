@@ -13,7 +13,6 @@ import struct
 
 import numpy as np
 import torch
-from torch.distributed.checkpoint.metadata import TensorStorageMetadata
 
 _LOCAL_SIG, _CD_SIG, _EOCD_SIG = b"PK\x03\x04", b"PK\x01\x02", b"PK\x05\x06"
 _LOCAL = struct.Struct("<4s5H3I2H")   # local file header (30 bytes fixed)
@@ -75,6 +74,8 @@ class ZeroCopyShardedWeight:
 
 def open_zero_copy_weight(checkpoint_dir: str, md, fqn: str) -> ZeroCopyShardedWeight:
     """Build a ZeroCopyShardedWeight for `fqn` from DCP metadata, or raise if not mmap-able."""
+    from torch.distributed.checkpoint.metadata import TensorStorageMetadata
+
     meta = md.state_dict_metadata[fqn]
     if not isinstance(meta, TensorStorageMetadata) or len(meta.size) != 2:
         raise ValueError("not a 2-D tensor")

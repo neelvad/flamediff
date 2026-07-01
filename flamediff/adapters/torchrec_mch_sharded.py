@@ -20,16 +20,20 @@ import os
 import shutil
 import tempfile
 import uuid
+from typing import TYPE_CHECKING
 
 import torch
-import torch.distributed.checkpoint as dcp
-from torch.distributed.checkpoint import FileSystemReader
-from torch.distributed.checkpoint.metadata import TensorStorageMetadata
 
-from flamediff.adapters._dcp_zerocopy import open_zero_copy_weight
 from flamediff.adapters._torchrec_common import assemble_checkpoint, has_mc_keys
 from flamediff.adapters.base import register
 from flamediff.types import Checkpoint
+
+if TYPE_CHECKING:
+    from torch.distributed.checkpoint.metadata import TensorStorageMetadata
+
+# torch.distributed.checkpoint (and the zero-copy reader) are imported lazily inside the methods so
+# `import flamediff` -- which imports this module to register the adapter -- doesn't pull in
+# torch.distributed (keeps `flamediff --help` quiet and the package import light).
 
 _DCP_METADATA = ".metadata"
 _DEFAULT_OOC_BYTES = 2 * 1024**3  # weights above this reassemble out-of-core (mmap scratch)
@@ -65,6 +69,7 @@ class ShardedTorchRecMCHAdapter:
     def can_load(self, path: str) -> bool:
         if not (os.path.isdir(path) and os.path.exists(os.path.join(path, _DCP_METADATA))):
             return False
+        from torch.distributed.checkpoint import FileSystemReader
         try:
             md = FileSystemReader(path).read_metadata()
         except Exception:
@@ -72,6 +77,12 @@ class ShardedTorchRecMCHAdapter:
         return has_mc_keys(md.state_dict_metadata)
 
     def load(self, path: str) -> Checkpoint:
+        import torch.distributed.checkpoint as dcp
+        from torch.distributed.checkpoint import FileSystemReader
+        from torch.distributed.checkpoint.metadata import TensorStorageMetadata
+
+        from flamediff.adapters._dcp_zerocopy import open_zero_copy_weight
+
         md = FileSystemReader(path).read_metadata()
         target: dict = {}
         zero_copy: dict = {}
