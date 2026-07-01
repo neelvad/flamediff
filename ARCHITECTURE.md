@@ -180,5 +180,7 @@ next) — so memory is bounded regardless of run length. Polling is a cheap `glo
 `flamediff report --html` (`Report.to_html`, `_html.py`) renders the same `Report` into a
 **self-contained static page** — vanilla JS + inline SVG, no server / build / deps, works offline —
 mirroring the TUI: trajectory sparklines with anomaly markers, the ranked event list, and per-event
-drill-down (attribution bars + movers, or churn). A thin `flamediff serve` for live refresh during
-`watch` is the planned follow-on.
+drill-down (attribution bars + movers, or churn). `flamediff serve` (`serve.py`) makes it **live**:
+a thin stdlib HTTP server whose background thread polls the run dir via a `Watcher` and caches the
+current `Report`; the page fetches `/data.json` on `--interval` and re-renders in place (no reload,
+keeps the selected event). `render_html(live_poll_ms=…)` toggles static file vs live page.

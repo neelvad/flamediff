@@ -37,6 +37,8 @@ flamediff report <run_dir> --fail-on 5        # exit nonzero past a severity (CI
 
 flamediff watch <run_dir> --interval 600      # stream NEW anomalies as checkpoints drop
 flamediff watch <run_dir> --fail-on 8         # guard a live run; exit nonzero on severe drift
+
+flamediff serve <run_dir> --interval 600      # live browsable dashboard, auto-refreshing
 ```
 
 Each anomaly reads as *"step N, `table.metric`, 3.1× over the calibrated bar — idiosyncratic

@@ -80,9 +80,10 @@ This is where the low-false-positive / calibration work pays off — alert fatig
   (`flamediff report --html`): a self-contained static page — vanilla JS + inline SVG, no server /
   build / deps — with the per-(table, metric) trajectory sparklines + anomaly markers, the ranked
   event list, and drill-down into each event's attribution / churn. It renders the same `Report`
-  JSON the CLI emits, so it's a pure presentation layer over a stable seam. **Fast-follow:** a thin
-  `flamediff serve` for live refresh during `watch` (or `watch` rewrites `report.json` and the page
-  polls). The natural demo/portfolio surface — turns "CLI + JSON" into something you *browse*.
+  JSON the CLI emits, so it's a pure presentation layer over a stable seam. **v2 built**
+  (`flamediff serve`): a thin stdlib HTTP server whose page fetches `/data.json` on an interval and
+  re-renders in place, so the dashboard live-refreshes as checkpoints land (verified end-to-end).
+  The natural demo/portfolio surface — turns "CLI + JSON" into something you *browse*, live.
 
 ## Non-goals (for now)
 
