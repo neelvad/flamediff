@@ -30,9 +30,14 @@ h2{font-size:12px;text-transform:uppercase;letter-spacing:.09em;color:var(--over
 .cell .lbl{font-size:11px;display:flex;justify-content:space-between}
 .cell .metric{color:var(--sub)} .cell .tbl{color:var(--overlay)}
 .cell.sev5 .metric{color:var(--red)} .cell.sev2 .metric{color:var(--peach)}
+.cell svg{width:100%;height:44px;display:block;margin-top:3px}
 svg .spark{fill:none;stroke:var(--blue);stroke-width:1.5}
 .mk{stroke:var(--base);stroke-width:1}
 .mk.s5{fill:var(--red)} .mk.s2{fill:var(--peach)} .mk.s1{fill:var(--yellow)}
+.hl{stroke:var(--overlay);stroke-width:1;stroke-dasharray:2 2}
+.hd{fill:var(--text);stroke:var(--base);stroke-width:1}
+#tip{position:fixed;pointer-events:none;display:none;z-index:10;white-space:nowrap;font-size:11px;
+padding:3px 7px;border-radius:4px;background:var(--surface2);color:var(--text);border:1px solid var(--overlay)}
 #bottom{display:grid;grid-template-columns:minmax(300px,1fr) minmax(320px,1.2fr);gap:18px}
 #evlist{display:flex;flex-direction:column;gap:2px;max-height:64vh;overflow:auto}
 .ev{display:grid;grid-template-columns:52px 1fr auto;gap:8px;padding:6px 8px;background:var(--mantle);
@@ -74,6 +79,7 @@ document.getElementById('worst').textContent=`worst ${D.worst_severity}× · ${D
 const evLook={};
 D.events.forEach(e=>{const k=e.table+'|'+e.metric+'|'+e.step;evLook[k]=Math.max(evLook[k]||0,e.severity);});
 const grid=document.getElementById('grid');
+const tip=document.createElement('div'); tip.id='tip'; document.body.appendChild(tip);
 D.series.forEach(s=>{
   const fin=s.values.filter(v=>v!=null); if(!fin.length)return;
   const W=200,H=46,pad=5,n=s.values.length,mn=Math.min(...fin),mx=Math.max(...fin),rng=(mx-mn)||1;
@@ -86,7 +92,22 @@ D.series.forEach(s=>{
   });
   const c=document.createElement('div'); c.className='cell '+cc(ms);
   c.innerHTML=`<div class="lbl"><span class="metric">${s.metric}</span><span class="tbl">${tn(s.table)}</span></div>`
-    +`<svg viewBox="0 0 ${W} ${H}" width="100%"><path class="spark" d="${d}"/>${mk}</svg>`;
+    +`<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><path class="spark" d="${d}"/>${mk}`
+    +`<line class="hl" y1="${pad}" y2="${H-pad}" style="display:none"/><circle class="hd" r="3.2" style="display:none"/></svg>`;
+  const svg=c.querySelector('svg'),hl=svg.querySelector('.hl'),hd=svg.querySelector('.hd');
+  svg.addEventListener('mousemove',ev=>{
+    const r=svg.getBoundingClientRect();
+    const t=Math.max(0,Math.min(1,((ev.clientX-r.left)/r.width*W-pad)/(W-2*pad)));
+    let i=Math.round(t*(n-1));
+    if(i<0||i>=n)return;
+    if(s.values[i]==null){let j=i;while(j<n&&s.values[j]==null)j++;if(j>=n){j=i;while(j>=0&&s.values[j]==null)j--;}i=j;}
+    if(i<0||i>=n||s.values[i]==null)return;
+    hl.setAttribute('x1',X(i));hl.setAttribute('x2',X(i));hl.style.display='';
+    hd.setAttribute('cx',X(i));hd.setAttribute('cy',Y(s.values[i]));hd.style.display='';
+    tip.innerHTML=`step <b>${s.steps[i]}</b> · ${(+s.values[i]).toPrecision(4)}`;
+    tip.style.display='block';tip.style.left=(ev.clientX+12)+'px';tip.style.top=(ev.clientY+14)+'px';
+  });
+  svg.addEventListener('mouseleave',()=>{hl.style.display='none';hd.style.display='none';tip.style.display='none';});
   c.onclick=()=>render(D.events.filter(e=>e.table===s.table&&e.metric===s.metric));
   grid.appendChild(c);
 });
