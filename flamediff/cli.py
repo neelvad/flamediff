@@ -85,6 +85,30 @@ def watch(
         time.sleep(interval)
 
 
+@app.command()
+def serve(
+    run_dir: str = typer.Argument(..., help="Run dir; the page live-refreshes as ckpt_* land."),
+    port: int = typer.Option(8000, "--port", help="Port to serve on."),
+    host: str = typer.Option("127.0.0.1", "--host", help="Host/interface to bind."),
+    interval: float = typer.Option(
+        60.0, "--interval", help="Seconds between polls / page refreshes."),
+    min_severity: float = typer.Option(
+        1.0, "--min-severity", help="Only show events at/above this severity."),
+    table: str | None = typer.Option(None, "--table", help="Restrict to one embedding table."),
+) -> None:
+    """Serve a live, browsable drift report that refreshes as checkpoints are dropped."""
+    from flamediff.serve import make_server
+
+    httpd = make_server(run_dir, host=host, port=port, interval=interval,
+                        table=table, min_severity=min_severity)
+    typer.echo(f"flamediff serving http://{host}:{port}  "
+               f"(refresh every {interval:g}s, Ctrl-C to stop)", err=True)
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        httpd.shutdown()
+
+
 def main() -> None:
     app()
 

@@ -85,9 +85,9 @@ class Report:
             "series": self.series,
         }
 
-    def to_html(self) -> str:
+    def to_html(self, live_poll_ms: int = 0) -> str:
         from flamediff._html import render_html
-        return render_html(self.to_dict())
+        return render_html(self.to_dict(), live_poll_ms)
 
     def to_json(self) -> str:
         return json.dumps(self.to_dict(), indent=2)
@@ -175,13 +175,7 @@ def build_report(
     enriched = _enrich(det.events, checkpoints, traj.diffs,
                        min_severity=min_severity, table=table, attr_cache={})
 
-    series = []
-    for (tbl, metric), s in sorted(traj.series.items()):
-        if table is not None and tbl != table:
-            continue
-        vals = [None if not np.isfinite(v) else round(float(v), 6) for v in s.value]
-        series.append({"table": tbl, "metric": metric,
-                       "steps": [int(x) for x in s.step], "values": vals})
+    series = _series_payload(traj.series, table)
 
     tables = sorted(set(checkpoints[0].embedding_tables) | set(checkpoints[0].dense_tensors))
     return Report(
@@ -204,6 +198,17 @@ def _enrich(events: list[Event], checkpoints: list[Checkpoint], diffs: list, *,
     return [EnrichedEvent(e, _explain(e, checkpoints, diffs, attr_cache)) for e in sel]
 
 
+def _series_payload(series_map: dict, table: str | None) -> list:
+    out = []
+    for (tbl, metric), s in sorted(series_map.items()):
+        if table is not None and tbl != table:
+            continue
+        vals = [None if not np.isfinite(v) else round(float(v), 6) for v in s.value]
+        out.append({"table": tbl, "metric": metric,
+                    "steps": [int(x) for x in s.step], "values": vals})
+    return out
+
+
 class Watcher:
     """Incremental drift watch over a run dir: `poll()` ingests any new ``ckpt_*`` and returns the
     events surfaced for the first time. Bounded memory -- it keeps the scalar diffs + per-step
@@ -218,6 +223,7 @@ class Watcher:
         self._steps: list = []
         self._diffs: list = []
         self._attr_cache: dict = {}       # (table, index) -> Attribution, pre-filled per step
+        self._events: list = []           # all current enriched events (for current_report)
         self._seen: set = set()           # event keys already surfaced
         self._processed: set = set()      # checkpoint paths already ingested
 
@@ -245,12 +251,26 @@ class Watcher:
             return []
         traj = TrajectoryDiff(self._steps, self._diffs, build_series(self._steps, self._diffs))
         det = detect_trajectory(traj)
+        self._events = _enrich(det.events, [], self._diffs, min_severity=self.min_severity,
+                               table=self.table, attr_cache=self._attr_cache)
         fresh = []
-        for ee in _enrich(det.events, [], self._diffs, min_severity=self.min_severity,
-                          table=self.table, attr_cache=self._attr_cache):
+        for ee in self._events:
             e = ee.event
             key = (e.index, e.table, e.metric, e.method)
             if key not in self._seen:
                 self._seen.add(key)
                 fresh.append(ee)
         return fresh
+
+    def current_report(self) -> Report:
+        """A full Report snapshot of the watcher's current state (for `flamediff serve`)."""
+        series = _series_payload(build_series(self._steps, self._diffs), self.table) \
+            if self._diffs else []
+        cal = _detect._DEFAULT_CALIBRATION
+        tables = sorted(self._last.embedding_tables) if self._last is not None else []
+        return Report(
+            run=self.run_dir, n_checkpoints=len(self._processed), tables=tables,
+            calibration=(cal.provenance or "loaded") if cal else "uncalibrated (raw |score|)",
+            target_fpr=cal.target_fpr if cal else None, min_severity=self.min_severity,
+            events=list(self._events), series=series,
+        )

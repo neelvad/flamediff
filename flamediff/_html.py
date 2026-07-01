@@ -71,50 +71,14 @@ border-left:3px solid var(--surface2);border-radius:4px;cursor:pointer;align-ite
 </main>
 <script id="flamediff-data" type="application/json">__DATA__</script>
 <script>
-const D=JSON.parse(document.getElementById('flamediff-data').textContent);
-const sc=s=>s>=5?'s5':s>=2?'s2':'s1', cc=s=>s>=5?'sev5':s>=2?'sev2':'', tn=t=>t.replace('_emb','');
-document.getElementById('run').textContent=D.run;
-document.getElementById('meta').textContent=`${D.n_checkpoints} checkpoints · ${D.tables.length} tables · cal: ${(D.calibration||'').split(':')[0]}`;
-document.getElementById('worst').textContent=`worst ${D.worst_severity}× · ${D.n_events} anomalies`;
-const evLook={};
-D.events.forEach(e=>{const k=e.table+'|'+e.metric+'|'+e.step;evLook[k]=Math.max(evLook[k]||0,e.severity);});
-const grid=document.getElementById('grid');
 const tip=document.createElement('div'); tip.id='tip'; document.body.appendChild(tip);
-D.series.forEach(s=>{
-  const fin=s.values.filter(v=>v!=null); if(!fin.length)return;
-  const W=200,H=46,pad=5,n=s.values.length,mn=Math.min(...fin),mx=Math.max(...fin),rng=(mx-mn)||1;
-  const X=i=>pad+(n<=1?0:i/(n-1))*(W-2*pad), Y=v=>pad+(1-(v-mn)/rng)*(H-2*pad);
-  let d='',st=false,mk='',ms=0;
-  s.values.forEach((v,i)=>{ if(v==null){st=false;return;}
-    d+=(st?'L':'M')+X(i).toFixed(1)+' '+Y(v).toFixed(1)+' ';st=true;
-    const sev=evLook[s.table+'|'+s.metric+'|'+s.steps[i]];
-    if(sev){ms=Math.max(ms,sev);mk+=`<circle cx="${X(i).toFixed(1)}" cy="${Y(v).toFixed(1)}" r="3" class="mk ${sc(sev)}"/>`;}
-  });
-  const c=document.createElement('div'); c.className='cell '+cc(ms);
-  c.innerHTML=`<div class="lbl"><span class="metric">${s.metric}</span><span class="tbl">${tn(s.table)}</span></div>`
-    +`<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><path class="spark" d="${d}"/>${mk}`
-    +`<line class="hl" y1="${pad}" y2="${H-pad}" style="display:none"/><circle class="hd" r="3.2" style="display:none"/></svg>`;
-  const svg=c.querySelector('svg'),hl=svg.querySelector('.hl'),hd=svg.querySelector('.hd');
-  svg.addEventListener('mousemove',ev=>{
-    const r=svg.getBoundingClientRect();
-    const t=Math.max(0,Math.min(1,((ev.clientX-r.left)/r.width*W-pad)/(W-2*pad)));
-    let i=Math.round(t*(n-1));
-    if(i<0||i>=n)return;
-    if(s.values[i]==null){let j=i;while(j<n&&s.values[j]==null)j++;if(j>=n){j=i;while(j>=0&&s.values[j]==null)j--;}i=j;}
-    if(i<0||i>=n||s.values[i]==null)return;
-    hl.setAttribute('x1',X(i));hl.setAttribute('x2',X(i));hl.style.display='';
-    hd.setAttribute('cx',X(i));hd.setAttribute('cy',Y(s.values[i]));hd.style.display='';
-    tip.innerHTML=`step <b>${s.steps[i]}</b> · ${(+s.values[i]).toPrecision(4)}`;
-    tip.style.display='block';tip.style.left=(ev.clientX+12)+'px';tip.style.top=(ev.clientY+14)+'px';
-  });
-  svg.addEventListener('mouseleave',()=>{hl.style.display='none';hd.style.display='none';tip.style.display='none';});
-  c.onclick=()=>render(D.events.filter(e=>e.table===s.table&&e.metric===s.metric));
-  grid.appendChild(c);
-});
+const sc=s=>s>=5?'s5':s>=2?'s2':'s1', cc=s=>s>=5?'sev5':s>=2?'sev2':'', tn=t=>t.replace('_emb','');
+const evkey=e=>e.table+'|'+e.metric+'|'+e.step+'|'+e.method;
+let DATA=null, SEL=null;
 const bar=(l,f,cl)=>`<div class="bar"><div class="row"><span>${l}</span><span>${(f*100).toFixed(0)}%</span></div>`
   +`<div class="track"><div class="fill ${cl}" style="width:${Math.max(0,Math.min(1,f))*100}%"></div></div></div>`;
 function detail(e){
-  const w=e.why||{}, b=document.getElementById('detailbody');
+  SEL=evkey(e); const w=e.why||{}, b=document.getElementById('detailbody');
   let h=`<div><span class="tag">${w.kind||''}</span> <b>step ${e.step}</b> · ${e.table}.${e.metric} · `
     +`<b>${e.severity.toFixed(1)}×</b> <span style="color:var(--overlay)">[${e.method}]</span></div>`
     +`<p style="color:var(--sub)">${w.text||''}</p>`;
@@ -130,25 +94,76 @@ function detail(e){
   h+=`<div class="dim">value ${e.value} vs baseline ${e.baseline} (${e.direction})</div>`;
   b.innerHTML=h;
 }
-function render(list){
+function renderEvents(list){
   const el=document.getElementById('evlist'); el.innerHTML='';
-  if(!list.length){el.innerHTML='<div class="ev">no anomalies</div>';return;}
-  list.forEach((e,i)=>{
+  if(!list.length){el.innerHTML='<div class="ev">no anomalies</div>';document.getElementById('detailbody').innerHTML='';return;}
+  let sel=null;
+  list.forEach(e=>{
     const r=document.createElement('div'); r.className='ev '+sc(e.severity);
     r.innerHTML=`<span class="step">${e.step}</span>`
       +`<span>${tn(e.table)}<span class="m">.${e.metric}</span></span>`
       +`<span class="sev">${e.severity.toFixed(1)}×</span>`;
     r.onclick=()=>{document.querySelectorAll('.ev').forEach(x=>x.classList.remove('sel'));r.classList.add('sel');detail(e);};
-    el.appendChild(r); if(i===0){r.classList.add('sel');detail(e);}
+    if(evkey(e)===SEL)sel=[r,e];
+    el.appendChild(r);
+  });
+  if(!sel)sel=[el.firstChild,list[0]];
+  sel[0].classList.add('sel'); detail(sel[1]);
+}
+function renderGrid(){
+  const grid=document.getElementById('grid'); grid.innerHTML='';
+  const evLook={};
+  DATA.events.forEach(e=>{const k=e.table+'|'+e.metric+'|'+e.step;evLook[k]=Math.max(evLook[k]||0,e.severity);});
+  DATA.series.forEach(s=>{
+    const fin=s.values.filter(v=>v!=null); if(!fin.length)return;
+    const W=200,H=46,pad=5,n=s.values.length,mn=Math.min(...fin),mx=Math.max(...fin),rng=(mx-mn)||1;
+    const X=i=>pad+(n<=1?0:i/(n-1))*(W-2*pad), Y=v=>pad+(1-(v-mn)/rng)*(H-2*pad);
+    let d='',st=false,mk='',ms=0;
+    s.values.forEach((v,i)=>{ if(v==null){st=false;return;}
+      d+=(st?'L':'M')+X(i).toFixed(1)+' '+Y(v).toFixed(1)+' ';st=true;
+      const sev=evLook[s.table+'|'+s.metric+'|'+s.steps[i]];
+      if(sev){ms=Math.max(ms,sev);mk+=`<circle cx="${X(i).toFixed(1)}" cy="${Y(v).toFixed(1)}" r="3" class="mk ${sc(sev)}"/>`;}
+    });
+    const c=document.createElement('div'); c.className='cell '+cc(ms);
+    c.innerHTML=`<div class="lbl"><span class="metric">${s.metric}</span><span class="tbl">${tn(s.table)}</span></div>`
+      +`<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none"><path class="spark" d="${d}"/>${mk}`
+      +`<line class="hl" y1="${pad}" y2="${H-pad}" style="display:none"/><circle class="hd" r="3.2" style="display:none"/></svg>`;
+    const svg=c.querySelector('svg'),hl=svg.querySelector('.hl'),hd=svg.querySelector('.hd');
+    svg.addEventListener('mousemove',ev=>{
+      const r=svg.getBoundingClientRect();
+      const t=Math.max(0,Math.min(1,((ev.clientX-r.left)/r.width*W-pad)/(W-2*pad)));
+      let i=Math.round(t*(n-1)); if(i<0||i>=n)return;
+      if(s.values[i]==null){let j=i;while(j<n&&s.values[j]==null)j++;if(j>=n){j=i;while(j>=0&&s.values[j]==null)j--;}i=j;}
+      if(i<0||i>=n||s.values[i]==null)return;
+      hl.setAttribute('x1',X(i));hl.setAttribute('x2',X(i));hl.style.display='';
+      hd.setAttribute('cx',X(i));hd.setAttribute('cy',Y(s.values[i]));hd.style.display='';
+      tip.innerHTML=`step <b>${s.steps[i]}</b> · ${(+s.values[i]).toPrecision(4)}`;
+      tip.style.display='block';tip.style.left=(ev.clientX+12)+'px';tip.style.top=(ev.clientY+14)+'px';
+    });
+    svg.addEventListener('mouseleave',()=>{hl.style.display='none';hd.style.display='none';tip.style.display='none';});
+    c.onclick=()=>renderEvents(DATA.events.filter(e=>e.table===s.table&&e.metric===s.metric));
+    grid.appendChild(c);
   });
 }
-render(D.events);
+function apply(D){
+  DATA=D;
+  document.getElementById('run').textContent=D.run;
+  document.getElementById('meta').textContent=`${D.n_checkpoints} checkpoints · ${D.tables.length} tables · cal: ${(D.calibration||'').split(':')[0]}`;
+  document.getElementById('worst').textContent=`worst ${D.worst_severity}× · ${D.n_events} anomalies`;
+  renderGrid(); renderEvents(D.events);
+}
+const POLL=__POLL_MS__;
+apply(JSON.parse(document.getElementById('flamediff-data').textContent));
+if(POLL>0)setInterval(()=>fetch('data.json',{cache:'no-store'}).then(r=>r.json()).then(apply).catch(()=>{}),POLL);
 </script></body></html>
 """
 
 
-def render_html(report: dict) -> str:
-    """Render a Report dict (from Report.to_dict()) into a self-contained HTML document."""
+def render_html(report: dict, live_poll_ms: int = 0) -> str:
+    """Render a Report dict into a self-contained HTML document. If ``live_poll_ms`` > 0 the page
+    re-fetches ``data.json`` on that interval (used by ``flamediff serve``); 0 is a static file."""
     data = json.dumps(report, ensure_ascii=False).replace("</", "<\\/")
     title = _html.escape(str(report.get("run", "run")))
-    return _TEMPLATE.replace("__TITLE__", title).replace("__DATA__", data)
+    return (_TEMPLATE.replace("__TITLE__", title)
+            .replace("__POLL_MS__", str(int(live_poll_ms)))
+            .replace("__DATA__", data))

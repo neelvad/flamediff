@@ -86,6 +86,32 @@ def test_cli_html_output(tmp_path):
 
 
 @pytest.mark.integration
+def test_serve_endpoints(tmp_path):
+    import threading
+    import urllib.request
+
+    if len(glob.glob(f"{RUN}/ckpt_*")) < 5:
+        pytest.skip("no trajectory fixture")
+    run = tmp_path / "run"
+    run.mkdir()
+    _link(sorted(glob.glob(f"{RUN}/ckpt_*")), run)
+
+    from flamediff.serve import make_server
+    httpd = make_server(str(run), host="127.0.0.1", port=0, interval=1.0, min_severity=1.0)
+    port = httpd.server_address[1]
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        html = urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=10).read().decode()
+        assert html.startswith("<!doctype html>")
+        assert "const POLL=1000" in html  # live mode wired: interval 1s -> re-fetch every 1000ms
+        payload = json.loads(
+            urllib.request.urlopen(f"http://127.0.0.1:{port}/data.json", timeout=10).read())
+        assert payload["events"] and payload["series"]
+    finally:
+        httpd.shutdown()
+
+
+@pytest.mark.integration
 def test_cli_report_and_gate():
     _run()  # skip-guard
     runner = CliRunner()
