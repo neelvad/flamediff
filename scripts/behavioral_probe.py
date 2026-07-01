@@ -3,8 +3,8 @@ predict REAL behavioral drift, and how does that depend on embedding over-parame
 
 Train a full recsys model (MCEC embeddings + a dot-product interaction, matrix-factorization style)
 on a rank-RANK latent task. Midway, flip the target relationship (latent -> -latent) for a random,
-popularity-spanning subset of author ids: those ids must relearn -- a genuine, popularity-independent
-meaning change. Checkpoint the MCEC (for flamediff) and record predictions on a FIXED canary grid.
+popularity-spanning subset of author ids: they must relearn -- a genuine meaning change that is, by
+construction, independent of popularity. Checkpoint the MCEC and record canary-grid predictions.
 Then, holding the TASK fixed, SWEEP the embedding dim and measure, per dim, how well weight-space
 drift (raw ||delta||, and flamediff's de-confounded residual) identifies the ids whose behavior
 actually changed -- yielding a degradation curve vs over-parameterization (dim >> latent rank).
@@ -182,9 +182,9 @@ def experiment() -> str:
     curve = []
     for dim in DIMS:
         row = run_one(dim)
-        print("dim=%2d  loss=%.3f  auc_behavior=%.3f  auc_raw_delta=%.3f  auc_residual=%.3f"
-              % (row["dim"], row["final_loss"], row["auc_behavior"], row["auc_raw_delta"],
-                 row["auc_residual"]))
+        print(f"dim={row['dim']:2d}  loss={row['final_loss']:.3f}  "
+              f"auc_behavior={row['auc_behavior']:.3f}  auc_raw_delta={row['auc_raw_delta']:.3f}  "
+              f"auc_residual={row['auc_residual']:.3f}")
         curve.append(row)
 
     result = {"config": {"rank": RANK, "flip_at": FLIP_AT, "shift_frac": SHIFT_FRAC,
