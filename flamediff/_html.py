@@ -1,0 +1,133 @@
+"""Self-contained HTML report viewer: embed a Report dict as JSON and render it with vanilla JS +
+inline SVG -- no server, no build step, no dependencies, works offline. It mirrors the TUI: the
+per-(table, metric) trajectory sparklines with anomaly markers, the ranked event list, and a
+drill-down into each event's *why* (attribution bars + movers, or a churn breakdown)."""
+from __future__ import annotations
+
+import html as _html
+import json
+
+_TEMPLATE = r"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>flamediff — __TITLE__</title>
+<style>
+:root{--base:#1e1e2e;--mantle:#181825;--surface:#313244;--surface2:#45475a;--text:#cdd6f4;
+--sub:#a6adc8;--overlay:#6c7086;--mauve:#cba6f7;--red:#f38ba8;--peach:#fab387;--yellow:#f9e2af;
+--mauve2:#b4befe;--blue:#89b4fa;--teal:#94e2d5;}
+*{box-sizing:border-box}
+body{margin:0;background:var(--base);color:var(--text);
+font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+header{padding:14px 20px;background:var(--mantle);border-bottom:1px solid var(--surface);
+display:flex;gap:22px;align-items:baseline;flex-wrap:wrap}
+header h1{margin:0;font-size:16px;color:var(--mauve)}
+.meta{color:var(--sub);font-size:12px}
+.worst{color:var(--red);font-weight:bold}
+main{padding:16px 20px;display:flex;flex-direction:column;gap:18px}
+h2{font-size:12px;text-transform:uppercase;letter-spacing:.09em;color:var(--overlay);margin:0 0 8px}
+#grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px}
+.cell{background:var(--mantle);border:1px solid var(--surface);border-radius:6px;padding:6px 8px;cursor:pointer}
+.cell:hover{border-color:var(--surface2)}
+.cell .lbl{font-size:11px;display:flex;justify-content:space-between}
+.cell .metric{color:var(--sub)} .cell .tbl{color:var(--overlay)}
+.cell.sev5 .metric{color:var(--red)} .cell.sev2 .metric{color:var(--peach)}
+svg .spark{fill:none;stroke:var(--blue);stroke-width:1.5}
+.mk{stroke:var(--base);stroke-width:1}
+.mk.s5{fill:var(--red)} .mk.s2{fill:var(--peach)} .mk.s1{fill:var(--yellow)}
+#bottom{display:grid;grid-template-columns:minmax(300px,1fr) minmax(320px,1.2fr);gap:18px}
+#evlist{display:flex;flex-direction:column;gap:2px;max-height:64vh;overflow:auto}
+.ev{display:grid;grid-template-columns:52px 1fr auto;gap:8px;padding:6px 8px;background:var(--mantle);
+border-left:3px solid var(--surface2);border-radius:4px;cursor:pointer;align-items:center}
+.ev:hover,.ev.sel{background:var(--surface)}
+.ev.s5{border-left-color:var(--red)} .ev.s2{border-left-color:var(--peach)} .ev.s1{border-left-color:var(--yellow)}
+.ev .step{color:var(--overlay);font-size:12px}
+.ev .m{color:var(--sub)} .ev .sev{font-weight:bold;color:var(--peach)}
+#detailbody{background:var(--mantle);border:1px solid var(--surface);border-radius:6px;padding:14px;min-height:220px}
+.tag{font-size:11px;padding:1px 7px;border-radius:9px;background:var(--surface);color:var(--sub)}
+.bar{margin:8px 0}
+.bar .row{display:flex;justify-content:space-between;font-size:12px;color:var(--sub)}
+.bar .track{height:8px;background:var(--surface);border-radius:4px;overflow:hidden;margin-top:3px}
+.fill{height:100%}.fill.g{background:var(--overlay)}.fill.p{background:var(--peach)}.fill.i{background:var(--mauve)}
+.movers{margin-top:12px;color:var(--sub);font-size:12px}
+.movers code,.churn code{color:var(--teal)}
+.churn{color:var(--sub);font-size:12px;margin-top:10px}
+.dim{color:var(--overlay);font-size:12px;margin-top:12px}
+</style></head><body>
+<header>
+  <h1>flamediff · <span id="run"></span></h1>
+  <span class="meta" id="meta"></span>
+  <span class="worst" id="worst"></span>
+</header>
+<main>
+  <section><h2>trajectory</h2><div id="grid"></div></section>
+  <section id="bottom">
+    <div><h2>anomalies</h2><div id="evlist"></div></div>
+    <div><h2>why</h2><div id="detailbody"></div></div>
+  </section>
+</main>
+<script id="flamediff-data" type="application/json">__DATA__</script>
+<script>
+const D=JSON.parse(document.getElementById('flamediff-data').textContent);
+const sc=s=>s>=5?'s5':s>=2?'s2':'s1', cc=s=>s>=5?'sev5':s>=2?'sev2':'', tn=t=>t.replace('_emb','');
+document.getElementById('run').textContent=D.run;
+document.getElementById('meta').textContent=`${D.n_checkpoints} checkpoints · ${D.tables.length} tables · cal: ${(D.calibration||'').split(':')[0]}`;
+document.getElementById('worst').textContent=`worst ${D.worst_severity}× · ${D.n_events} anomalies`;
+const evLook={};
+D.events.forEach(e=>{const k=e.table+'|'+e.metric+'|'+e.step;evLook[k]=Math.max(evLook[k]||0,e.severity);});
+const grid=document.getElementById('grid');
+D.series.forEach(s=>{
+  const fin=s.values.filter(v=>v!=null); if(!fin.length)return;
+  const W=200,H=46,pad=5,n=s.values.length,mn=Math.min(...fin),mx=Math.max(...fin),rng=(mx-mn)||1;
+  const X=i=>pad+(n<=1?0:i/(n-1))*(W-2*pad), Y=v=>pad+(1-(v-mn)/rng)*(H-2*pad);
+  let d='',st=false,mk='',ms=0;
+  s.values.forEach((v,i)=>{ if(v==null){st=false;return;}
+    d+=(st?'L':'M')+X(i).toFixed(1)+' '+Y(v).toFixed(1)+' ';st=true;
+    const sev=evLook[s.table+'|'+s.metric+'|'+s.steps[i]];
+    if(sev){ms=Math.max(ms,sev);mk+=`<circle cx="${X(i).toFixed(1)}" cy="${Y(v).toFixed(1)}" r="3" class="mk ${sc(sev)}"/>`;}
+  });
+  const c=document.createElement('div'); c.className='cell '+cc(ms);
+  c.innerHTML=`<div class="lbl"><span class="metric">${s.metric}</span><span class="tbl">${tn(s.table)}</span></div>`
+    +`<svg viewBox="0 0 ${W} ${H}" width="100%"><path class="spark" d="${d}"/>${mk}</svg>`;
+  c.onclick=()=>render(D.events.filter(e=>e.table===s.table&&e.metric===s.metric));
+  grid.appendChild(c);
+});
+const bar=(l,f,cl)=>`<div class="bar"><div class="row"><span>${l}</span><span>${(f*100).toFixed(0)}%</span></div>`
+  +`<div class="track"><div class="fill ${cl}" style="width:${Math.max(0,Math.min(1,f))*100}%"></div></div></div>`;
+function detail(e){
+  const w=e.why||{}, b=document.getElementById('detailbody');
+  let h=`<div><span class="tag">${w.kind||''}</span> <b>step ${e.step}</b> · ${e.table}.${e.metric} · `
+    +`<b>${e.severity.toFixed(1)}×</b> <span style="color:var(--overlay)">[${e.method}]</span></div>`
+    +`<p style="color:var(--sub)">${w.text||''}</p>`;
+  if(w.aligned_residual!=null){
+    h+=bar('global basis drift',w.global||0,'g')+bar('popularity (r²)',w.popularity_r2||0,'p')
+      +bar('idiosyncratic',w.aligned_residual||0,'i');
+    if(w.top_movers&&w.top_movers.length)
+      h+=`<div class="movers">movers: ${w.top_movers.map(m=>'<code>'+m+'</code>').join(' ')}</div>`;
+  }else if(w.churn){const c=w.churn;
+    h+=`<div class="churn">inserted <code>${c.inserted}</code> · evicted <code>${c.evicted}</code>`
+      +` · re-admitted <code>${c.readmitted}</code> · slot-moved <code>${c.slot_moved}</code>`
+      +` · survivors <code>${c.survivors}</code></div>`;}
+  h+=`<div class="dim">value ${e.value} vs baseline ${e.baseline} (${e.direction})</div>`;
+  b.innerHTML=h;
+}
+function render(list){
+  const el=document.getElementById('evlist'); el.innerHTML='';
+  if(!list.length){el.innerHTML='<div class="ev">no anomalies</div>';return;}
+  list.forEach((e,i)=>{
+    const r=document.createElement('div'); r.className='ev '+sc(e.severity);
+    r.innerHTML=`<span class="step">${e.step}</span>`
+      +`<span>${tn(e.table)}<span class="m">.${e.metric}</span></span>`
+      +`<span class="sev">${e.severity.toFixed(1)}×</span>`;
+    r.onclick=()=>{document.querySelectorAll('.ev').forEach(x=>x.classList.remove('sel'));r.classList.add('sel');detail(e);};
+    el.appendChild(r); if(i===0){r.classList.add('sel');detail(e);}
+  });
+}
+render(D.events);
+</script></body></html>
+"""
+
+
+def render_html(report: dict) -> str:
+    """Render a Report dict (from Report.to_dict()) into a self-contained HTML document."""
+    data = json.dumps(report, ensure_ascii=False).replace("</", "<\\/")
+    title = _html.escape(str(report.get("run", "run")))
+    return _TEMPLATE.replace("__TITLE__", title).replace("__DATA__", data)

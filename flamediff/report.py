@@ -11,6 +11,8 @@ import glob
 import json
 from dataclasses import dataclass, field
 
+import numpy as np
+
 from flamediff import detect as _detect
 from flamediff.attribute import attribute_table
 from flamediff.detect import Event, detect_trajectory
@@ -68,6 +70,7 @@ class Report:
     target_fpr: float | None
     min_severity: float
     events: list[EnrichedEvent]  # sorted by severity desc
+    series: list = field(default_factory=list)  # [{table, metric, steps, values}] for the charts
 
     def worst_severity(self) -> float:
         return max((e.severity for e in self.events), default=0.0)
@@ -79,7 +82,12 @@ class Report:
             "min_severity": self.min_severity, "n_events": len(self.events),
             "worst_severity": round(self.worst_severity(), 3),
             "events": [e.to_dict() for e in self.events],
+            "series": self.series,
         }
+
+    def to_html(self) -> str:
+        from flamediff._html import render_html
+        return render_html(self.to_dict())
 
     def to_json(self) -> str:
         return json.dumps(self.to_dict(), indent=2)
@@ -167,6 +175,14 @@ def build_report(
     enriched = _enrich(det.events, checkpoints, traj.diffs,
                        min_severity=min_severity, table=table, attr_cache={})
 
+    series = []
+    for (tbl, metric), s in sorted(traj.series.items()):
+        if table is not None and tbl != table:
+            continue
+        vals = [None if not np.isfinite(v) else round(float(v), 6) for v in s.value]
+        series.append({"table": tbl, "metric": metric,
+                       "steps": [int(x) for x in s.step], "values": vals})
+
     tables = sorted(set(checkpoints[0].embedding_tables) | set(checkpoints[0].dense_tensors))
     return Report(
         run=run,
@@ -176,6 +192,7 @@ def build_report(
         target_fpr=cal.target_fpr if cal else None,
         min_severity=min_severity,
         events=enriched,
+        series=series,
     )
 
 

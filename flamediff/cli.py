@@ -23,6 +23,8 @@ def report(
     run_dir: str = typer.Argument(..., help="A run directory containing ckpt_* checkpoints."),
     json_out: bool = typer.Option(False, "--json", help="Emit JSON instead of text."),
     md: Path | None = typer.Option(None, "--md", help="Also write a markdown report here."),
+    html_out: Path | None = typer.Option(
+        None, "--html", help="Also write a self-contained HTML report viewer here."),
     table: str | None = typer.Option(None, "--table", help="Restrict to one embedding table."),
     min_severity: float = typer.Option(
         1.0, "--min-severity", help="Hide events below this calibrated severity."),
@@ -44,6 +46,9 @@ def report(
     if md is not None:
         md.write_text(rep.to_markdown())
         typer.echo(f"wrote {md}", err=True)
+    if html_out is not None:
+        html_out.write_text(rep.to_html())
+        typer.echo(f"wrote {html_out}", err=True)
     if fail_on is not None and rep.worst_severity() >= fail_on:
         raise typer.Exit(1)
 

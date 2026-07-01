@@ -60,7 +60,29 @@ def test_report_json_and_markdown():
     d = json.loads(rep.to_json())
     assert d["n_events"] == len(rep.events)
     assert d["worst_severity"] == round(rep.worst_severity(), 3)
+    assert d["series"] and d["series"][0]["values"]  # the charts' trajectory data
     assert rep.to_markdown().startswith("# flamediff report")
+
+
+@pytest.mark.integration
+def test_report_html_is_self_contained():
+    import re
+
+    html = build_report(_run(), run=RUN).to_html()
+    assert html.startswith("<!doctype html>")
+    assert "http://" not in html and "https://" not in html  # no external deps -> works offline
+    data = json.loads(re.search(r'application/json">(.*?)</script>', html, re.S)
+                       .group(1).replace("<\\/", "</"))
+    assert data["series"] and data["events"]
+
+
+@pytest.mark.integration
+def test_cli_html_output(tmp_path):
+    _run()
+    out = tmp_path / "report.html"
+    res = CliRunner().invoke(app, ["report", RUN, "--html", str(out)])
+    assert res.exit_code == 0
+    assert out.exists() and out.read_text().startswith("<!doctype html>")
 
 
 @pytest.mark.integration
