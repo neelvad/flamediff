@@ -14,15 +14,30 @@ TorchRec MCH-ZCH), from single-device `state_dict`s and sharded DCP checkpoints 
 id-keyed join over checkpoints rather than a row-index subtract.
 
 > **v1 scope (honest limits):**
-> - **Scale.** Reads both single-device and **sharded (DCP)** TorchRec checkpoints, locally; a
->   large weight loads **out-of-core** (reassembled into an mmap scratch file, auto by size) so a
->   bigger-than-RAM checkpoint stays bounded. The remaining limit is the *diff result*: the id-join
->   and per-id arrays still materialize, so billion-*id* diffs aren't streamed yet (and Stage 2
->   copies the weight to scratch rather than mmapping the `.distcp` chunks directly).
+> - **Scale.** Reads single-device and **sharded (DCP)** TorchRec checkpoints, locally. Large
+>   weights are read **out-of-core, zero-copy** — mmapping the `.distcp` chunks directly (with a
+>   mmap-scratch fallback), auto by size — and the diff gathers survivors in batches, so a
+>   bigger-than-RAM checkpoint stays bounded. The remaining limit is the *diff result*: the per-id
+>   summary arrays still materialize, so a genuine billion-*id* diff needs a streaming (t-digest)
+>   reduction — noted, not built.
 > - **Calibration.** The shipped `flamediff/calibration.json` is derived from **clean real-scale
 >   runs** (10 stationary TorchRec MCH runs, dim=64, 2 tables; see its `provenance`). Regenerate
 >   for your own data with `scripts/calibrate_real.py` (Modal) or `scripts/calibrate.py` (synthetic).
 > - **One format.** Only the TorchRec MCH/ZCH adapter exists; static-hash (regime A) is deferred.
+
+## Quickstart
+
+```bash
+git clone https://github.com/neelvad/flamediff
+cd flamediff
+uv sync                 # create .venv and install deps (managed with uv, Python 3.12)
+uv run flamediff --help
+```
+
+The reference **fixtures are large and not checked in** (see [Reference fixtures](#reference-fixtures)
+to generate them). The easiest first look needs nothing to run: the
+**[live example report](https://neelvad.github.io/flamediff/)**, or generate your own HTML with
+`flamediff report <run_dir> --html out.html`.
 
 ## Usage
 
@@ -42,9 +57,18 @@ flamediff watch <run_dir> --fail-on 8         # guard a live run; exit nonzero o
 flamediff serve <run_dir> --interval 600      # live browsable dashboard, auto-refreshing
 ```
 
-Each anomaly reads as *"step N, `table.metric`, 3.1× over the calibrated bar — idiosyncratic
-drift (global 2%, popularity 24%, residual 74%); movers …"* (or a churn breakdown for
-insertion/eviction spikes).
+Sample output — every anomaly carries a *why* (a churn breakdown, or the drift attribution):
+
+```text
+flamediff report — run_1782312586  (24 ckpts, 2 tables)  cal=REAL (FPR 0.05)
+
+ANOMALIES (calibrated severity ≥ 1, most severe first):
+  ● step 250  author_id_emb.inserted_rate   17.6×  [page_hinkley]
+       why: churn down: 1195 inserted / 1195 evicted / 0 re-admitted / 4 slot-moved
+  ● step 700  video_id_emb.n_freq_resid_hi    1.3×  [robust_z]
+       why: idiosyncratic drift (global 0%, popularity r²=0.23, residual 100%); movers 0, 30004, 1
+SUMMARY: 45 anomalies across 2 tables; worst step 250 (author_id_emb.inserted_rate 17.6×)
+```
 
 ## Development
 

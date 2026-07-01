@@ -1,5 +1,10 @@
 # flamediff — plan
 
+> **Historical design rationale** — this is the original design thinking, broader than what shipped
+> (it mentions PyTorch/safetensors and layers later deferred or reshaped). For *current* scope and
+> the built system see [`README.md`](README.md) and [`ARCHITECTURE.md`](ARCHITECTURE.md), and
+> [`ROADMAP.md`](ROADMAP.md) for status. Kept as-is for the reasoning.
+
 ## What this is
 A tool for tracking structural changes across raw model checkpoints (PyTorch /
 safetensors) dropped over a training run (e.g. hourly). Reads weights off disk — no
