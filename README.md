@@ -5,6 +5,10 @@ safetensors) dropped over a training run — reading weights off disk, no forwar
 See [`plan.md`](plan.md) for the design, [`ROADMAP.md`](ROADMAP.md) for the product plan, and
 [`ARCHITECTURE.md`](ARCHITECTURE.md) for the built system.
 
+**▶ [Live example report](https://neelvad.github.io/flamediff/)** — the browsable HTML view
+(`flamediff report --html`): trajectory sparklines with anomaly markers, ranked events, and
+drill-down into each event's *why*. Hover a chart for the checkpoint step + value.
+
 v1 target: **dynamic managed-collision embedding tables** (recsys / TorchRec MCH-ZCH),
 where the diff is an id-keyed join over checkpoints rather than a row-index subtract.
 
