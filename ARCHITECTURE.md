@@ -176,3 +176,9 @@ ingests new `ckpt_*`, re-detects on the accumulated scalar series, and surfaces 
 attribution is computed per step and cached, and only the **last checkpoint** is held (to diff the
 next) — so memory is bounded regardless of run length. Polling is a cheap `glob`, so `--interval`
 (default 60s) can be raised freely to match checkpoint cadence; `--fail-on` guards a live run.
+
+`flamediff report --html` (`Report.to_html`, `_html.py`) renders the same `Report` into a
+**self-contained static page** — vanilla JS + inline SVG, no server / build / deps, works offline —
+mirroring the TUI: trajectory sparklines with anomaly markers, the ranked event list, and per-event
+drill-down (attribution bars + movers, or churn). A thin `flamediff serve` for live refresh during
+`watch` is the planned follow-on.

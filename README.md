@@ -28,6 +28,7 @@ attribution over a run's checkpoints, so each flagged event comes with *why* it 
 flamediff report <run_dir>                    # ranked anomalies, each with a 'why' line
 flamediff report <run_dir> --min-severity 5   # focus on the strongest
 flamediff report <run_dir> --json --md out.md # machine + shareable outputs
+flamediff report <run_dir> --html out.html    # a browsable, self-contained web view
 flamediff report <run_dir> --fail-on 5        # exit nonzero past a severity (CI gate)
 
 flamediff watch <run_dir> --interval 600      # stream NEW anomalies as checkpoints drop
