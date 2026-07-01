@@ -25,8 +25,9 @@ streaming-gather diff, real-data calibration), an intrinsic **attribution "why"*
 global / popularity / idiosyncratic, injection-validated — this is what "B" became; the external
 **event-log join** originally sketched as v1.5 is still deferred), and v2.0 **monitoring** (`report`
 / `watch` / `serve`, static + live HTML dashboard, CI gate; public repo + live demo). The milestone
-sections below are kept for history. Current frontier: **branch E** (behavioral probes) + smaller
-polish (t-digest streaming reductions, scaling-Procrustes, static-hash format).
+sections below are kept for history. Branch **E** (behavioral probes) is now also shipped — see
+[`RESEARCH.md`](RESEARCH.md). Remaining: smaller polish (t-digest streaming reductions,
+scaling-Procrustes, static-hash format).
 
 ## v0.1 — validated prototype  ·  *shipped (history below)*
 
@@ -79,7 +80,12 @@ This is where the low-false-positive / calibration work pays off — alert fatig
 - **D — format breadth.** Static-hash (regime A, common in DLRMs) first, then Merlin/HKV, LLM
   vocab, dense models. *After* there's adoption to broaden for — breadth on toy data is just more
   toys.
-- **E — behavioral "what" (research spike).** Frozen difference-of-means probes over a fixed
+- **E — behavioral "what" (research spike)** · **✓ shipped — [`RESEARCH.md`](RESEARCH.md).**
+  *Result:* weight-space drift predicts behavioral change above chance (AUC ~0.6), degrading as
+  embeddings over-parameterize (null-space drift dilutes the link); the de-confounded residual
+  matches raw ‖Δ‖ in this behavioral regime (its edge shows only when popularity is the confound).
+  A weak-to-moderate positive, reported honestly. Original framing below.
+  Frozen difference-of-means probes over a fixed
   canary set. The research question: *does cheap weight-space drift predict behavioral drift, and
   can a frozen probe-bank catch behavioral regressions that an hourly weight-diff misses?* Ship a
   **research note with the result, positive or negative.** The most interesting / most research-y

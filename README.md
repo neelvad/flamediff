@@ -2,8 +2,9 @@
 
 A tool for detecting and attributing structural drift across raw model checkpoints dropped over a
 training run — reading weights off disk, no forward pass.
-See [`plan.md`](plan.md) for the design, [`ROADMAP.md`](ROADMAP.md) for the product plan, and
-[`ARCHITECTURE.md`](ARCHITECTURE.md) for the built system.
+See [`plan.md`](plan.md) for the design, [`ROADMAP.md`](ROADMAP.md) for the product plan,
+[`ARCHITECTURE.md`](ARCHITECTURE.md) for the built system, and [`RESEARCH.md`](RESEARCH.md) for the
+behavioral-probe research note (does cheap weight-diff predict behavioral drift?).
 
 **▶ [Live example report](https://neelvad.github.io/flamediff/)** — the browsable HTML view
 (`flamediff report --html`): trajectory sparklines with anomaly markers, ranked events, and
