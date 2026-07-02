@@ -29,6 +29,9 @@ real behavioral change?
 
 ## Result
 
+*(Single seed — kept for the narrative; the **multi-seed replication** section below is the
+authoritative version with error bars.)*
+
 The **projected** columns are the follow-up experiment (see *Does subspace projection repair the
 dilution?* below): per-id drift projected onto the table's dominant covariance eigenbasis before
 scoring — at an automatic 90%-energy rank (`proj@e90`), and at a fixed `2×RANK = 8` oracle
@@ -123,6 +126,38 @@ practical conclusions stand: (a) keep embeddings tight if you want weight diffs 
 behavior, and (b) when you need behavioral *precision*, measure behavior — a frozen-panel probe
 tier on nominated ids, not a cleverer weight norm.
 
+## Multi-seed replication (n = 5) — the numbers that stand
+
+Everything above is a single seed. This section is **5 full independent replications** — new
+latents, flip set, canaries, data stream, and init per seed, run as parallel containers
+(`experiment.map`). Two meta-lessons first: cross-seed spread is ±0.02–0.03 AUC (about twice the
+seeded-GPU rerun noise), and the original seed turns out to have been a *below-average draw* —
+absolute AUCs run ~0.03–0.05 higher on average than the tables above. Levels move; none of the
+conclusions do.
+
+| `DIM` | loss | AUC behavior | **AUC raw ‖Δ‖** | residual | proj@r8 (own) | xproj@r8 (co) | xweight |
+|---|---|---|---|---|---|---|---|
+| 8  | 0.37±0.04 | 0.631±0.013 | **0.633±0.017** | 0.597±0.032 | 0.633±0.017 | 0.633±0.017 | 0.633±0.014 |
+| 16 | 0.33±0.04 | 0.646±0.022 | **0.656±0.018** | 0.619±0.034 | 0.657±0.019 | 0.656±0.019 | 0.654±0.022 |
+| 32 | 0.41±0.04 | 0.631±0.028 | **0.631±0.018** | 0.604±0.032 | 0.631±0.021 | 0.630±0.021 | 0.631±0.024 |
+| 64 | 0.69±0.06 | 0.596±0.040 | **0.597±0.025** | 0.583±0.033 | 0.599±0.028 | 0.600±0.028 | 0.600±0.031 |
+
+Paired **within-seed** contrasts — the honest test, since cross-seed task variance cancels:
+
+| claim | contrast | result |
+|---|---|---|
+| **dilution is real** | raw@16 − raw@64 | **+0.059 ± 0.020 — 5/5 seeds > 0** |
+| own-basis projection repairs it | proj@r8 − raw, @64 | +0.001 ± 0.008 (2/5) — null |
+| co-tower projection repairs it | xproj@r8 − raw, @64 | +0.002 ± 0.007 (3/5) — null |
+| interaction-weighted norm repairs it | xweight − raw, @64 | +0.003 ± 0.010 (3/5) — null |
+| the residual helps in this regime | resid − raw, @64 | −0.014 ± 0.016 (1/5) — if anything it *hurts* |
+
+With error bars, the story is: **weight diff tracks behavior at ~0.60–0.66 AUC; going from
+`DIM=16` to `DIM=64` costs ~0.06 AUC in every seed; no linear reweighting of the weight diff gets
+any of it back; and the popularity-residual slightly hurts when popularity isn't the confound.**
+The `DIM=64` convergence confound also replicates in every seed (loss 0.69 vs ~0.33–0.41), so
+"null-space dilution" and "under-convergence" remain entangled at the top dim.
+
 ## What the iteration taught us (methodology)
 
 Getting a *valid* behavioral probe out of a toy model surfaced real subtleties, each a lesson:
@@ -144,7 +179,9 @@ Getting a *valid* behavioral probe out of a toy model surfaced real subtleties, 
 
 ## Limitations
 
-Toy scale; a single seed per dim (effect sizes are small relative to run-to-run noise); one model
-class (MF dot-product); the frozen-panel probe is one behavioral view among many. A stronger version
-would average over seeds, decouple convergence from dim (train each to a matched loss), and add a real
-downstream head. Left as future work — the pipeline (`scripts/behavioral_probe.py`) supports it.
+Toy scale; one model class (MF dot-product); the frozen-panel probe is one behavioral view among
+many. Multi-seed replication is now done (n = 5, above) — the remaining upgrades are decoupling
+convergence from dim (train each to a matched loss; the `DIM=64` under-convergence confound
+replicates in every seed), a real downstream head, and a semi-real dataset (MovieLens/Criteo-class,
+with a real distribution shift instead of a planted flip). The pipeline
+(`scripts/behavioral_probe.py`) supports all of it.
