@@ -66,9 +66,10 @@ which is exactly why it's worth shipping the result either way.
 If finding 2's mechanism is right — at `DIM ≫ rank`, most movement is behaviorally-irrelevant
 null-space motion — then projecting each id's Δ onto the table's *dominant covariance eigenbasis*
 before scoring should discard the null-space component and recover the AUC at `DIM = 64`.
-`flamediff.spectral.project_deltas` does exactly that; the sweep (fully seeded, so the baseline
-columns reproduce bit-for-bit) adds it at an automatic 90%-energy rank and at a fixed `2×RANK`
-oracle.
+`flamediff.spectral.project_deltas` does exactly that; the sweep adds it at an automatic
+90%-energy rank and at a fixed `2×RANK` oracle. (The sweep is seeded, but GPU training is not
+bit-for-bit deterministic: across reruns the baseline AUCs drift by up to ~±0.013 — that is the
+noise floor any per-run difference below should be read against.)
 
 **It doesn't.** Projection is flat everywhere (±0.006 of raw ‖Δ‖), including at `DIM = 64`
 (0.548 raw → 0.546/0.552 projected). The `rank90` column says why: the embedding covariance is
@@ -79,13 +80,48 @@ covariance-based projection removes almost nothing that raw ‖Δ‖ didn't alre
 fixed `r = 8` oracle doesn't help — the behaviorally-relevant directions are evidently not the
 top-*variance* directions of the table itself.
 
-The sharpened hypothesis this leaves: behavioral relevance in a dot-product model is defined by
+The sharpened hypothesis this left: behavioral relevance in a dot-product model is defined by
 the *other tower* (movement matters where the co-embeddings have mass), so the right projection
-basis is the interaction-weighted one — e.g. the covariance of the *opposing* table, or a
-CCA-style joint basis — not the table's own. That needs the co-table at diff time (flamediff has
-it: both tables are in the same checkpoint) and is the natural next experiment. Meanwhile the
-practical reading of the dilution stands, unrepaired: keep embeddings tight if you want weight
-diffs to track behavior.
+basis is the interaction-weighted one — the covariance of the *opposing* table, not the table's
+own. Tested next.
+
+## Is the co-tower basis the right one? (second follow-up — also negative)
+
+The interaction-weighted scorers (`flamediff.spectral`, both deployable at diff time since both
+tables are in the same checkpoint): Δ projected onto the **video** tower's dominant eigenbasis
+(`xproj`, auto 90%-energy rank and fixed `2×RANK`), and the untruncated covariance-weighted norm
+`√(Δᵀ C_video Δ)` (`xweight`) — how much the id's *scores* against a typical co-embedding move,
+computed purely from weights.
+
+| `DIM` | loss | AUC behavior | **AUC raw ‖Δ‖** | proj@r8 (own) | xproj@e90 | xproj@r8 | xweight |
+|---|---|---|---|---|---|---|---|
+| 8  | 0.35 | 0.552 | **0.591** | 0.591 | 0.588 | 0.591 | 0.581 |
+| 16 | 0.32 | 0.565 | **0.591** | 0.589 | 0.584 | 0.585 | 0.585 |
+| 32 | 0.41 | 0.577 | **0.589** | 0.591 | 0.588 | 0.586 | 0.583 |
+| 64 | 0.73 | 0.540 | **0.552** | 0.556 | 0.552 | 0.561 | 0.557 |
+
+**Also flat.** At `DIM = 64` the best interaction-weighted variant (`xproj@r8`, 0.561) sits
++0.009 over raw — inside the ±0.013 cross-run noise — and nowhere near the tight-dim ~0.59.
+Two observations make this a *coherent* negative rather than a puzzle:
+
+1. **The behavioral score itself agrees.** The frozen-panel fingerprint delta *is* a
+   panel-sampled readout-weighted norm (`‖Δ·P₀ᵀ‖`), and its AUC is *below* raw ‖Δ‖ at every dim.
+   `xweight` is the population version of the same quantity (all 20k co-embeddings instead of a
+   128-panel), and it lands in the same place. Readout-weighting is self-consistent — it just
+   isn't a better identifier of the planted flip than raw movement.
+2. **Why it can't win here:** the co-tower is trained on the same task with the same
+   over-parameterization, so *its* covariance is nearly as diffuse as the author table's
+   (`rank90 = 42/64` on both sides). Weighting by a near-isotropic covariance is a no-op. The
+   dilution isn't "movement in a subspace nobody reads" — under Adam, movement *and* readout mass
+   are both spread across the whole space.
+
+**Bottom line for branch E, now settled:** no weight-space reweighting we tested — own-basis
+projection, co-tower projection, full interaction-weighted norm, or the popularity-de-confounded
+residual — beats raw ‖Δ‖ at identifying behaviorally-changed ids in the over-parameterized
+regime. The dilution appears irreducible within linear reweightings of the weight diff. The
+practical conclusions stand: (a) keep embeddings tight if you want weight diffs to track
+behavior, and (b) when you need behavioral *precision*, measure behavior — a frozen-panel probe
+tier on nominated ids, not a cleverer weight norm.
 
 ## What the iteration taught us (methodology)
 
@@ -99,8 +135,12 @@ Getting a *valid* behavioral probe out of a toy model surfaced real subtleties, 
 - A **shared, moving panel** swamps per-id behavior → freeze the panel to isolate each id.
 - **Over-parameterization** (`DIM ≫ rank`) → null-space drift dilutes the weight↔behavior link.
 - A table's **own covariance eigenbasis is not its behavioral basis** — projecting Δ onto the
-  top-variance subspace doesn't recover the diluted signal; behavioral relevance lives in the
-  interaction (the other tower), not in the table's variance structure.
+  top-variance subspace doesn't recover the diluted signal.
+- Neither is the **co-tower's**: under the same over-parameterized training, the co-table's
+  covariance is just as diffuse, so interaction-weighting is a near-no-op. Movement and readout
+  mass dilute *together* — the fix for precision is a behavioral probe tier, not a better norm.
+- **Seeded ≠ deterministic on GPU**: baseline AUCs drift ~±0.013 across identical reruns. Any
+  single-run difference below that is noise; multi-seed averaging is the real fix.
 
 ## Limitations
 

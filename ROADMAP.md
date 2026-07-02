@@ -84,7 +84,11 @@ This is where the low-false-positive / calibration work pays off — alert fatig
   *Result:* weight-space drift predicts behavioral change above chance (AUC ~0.6), degrading as
   embeddings over-parameterize (null-space drift dilutes the link); the de-confounded residual
   matches raw ‖Δ‖ in this behavioral regime (its edge shows only when popularity is the confound).
-  A weak-to-moderate positive, reported honestly. Original framing below.
+  A weak-to-moderate positive, reported honestly. *Follow-ups (both clean negatives):* neither
+  own-basis nor interaction-weighted (co-tower) subspace projection repairs the dilution — it is
+  irreducible within linear reweightings of the weight diff; behavioral *precision* needs a
+  frozen-panel probe tier over nominated ids, not a cleverer norm. Branch E's question is settled.
+  Original framing below.
   Frozen difference-of-means probes over a fixed
   canary set. The research question: *does cheap weight-space drift predict behavioral drift, and
   can a frozen probe-bank catch behavioral regressions that an hourly weight-diff misses?* Ship a
