@@ -8,7 +8,12 @@ from typer.testing import CliRunner
 from flamediff import stats
 from flamediff.cli import app
 from flamediff.diff import diff_table
-from flamediff.spectral import _stable_since, project_deltas, spectral_report
+from flamediff.spectral import (
+    _stable_since,
+    covariance_weighted_deltas,
+    project_deltas,
+    spectral_report,
+)
 from flamediff.types import Checkpoint
 
 RUN = "fixtures/run_1782312586"
@@ -69,6 +74,39 @@ def test_project_deltas_removes_nullspace_motion(make_table):
     Ws[:, :4] += 1.0
     proj_in = project_deltas(a, a.with_weights(Ws), ids)
     assert proj_in.min() > 0.5
+
+
+def test_project_deltas_with_co_tower_basis(make_table):
+    ids = np.arange(400)
+    W = _lowrank_weights(400, 16, rank=4, noise=0.0)
+    a = make_table(ids=ids, dim=16, weights=W)
+    # the co-table's mass lives in axes 8..12, NOT where table a's own variance lives (axes 0..4)
+    co_W = torch.zeros(300, 16)
+    co_W[:, 8:12] = torch.randn(300, 4, generator=torch.Generator().manual_seed(1))
+    co = make_table("co", ids=np.arange(300), dim=16, weights=co_W)
+    # movement in a's own top-variance axes but invisible to the co-table -> removed by the
+    # co-tower basis (which a's own basis would have kept)
+    Wm = W.clone()
+    Wm[:, :4] += 1.0
+    proj_co = project_deltas(a, a.with_weights(Wm), ids, basis_table=co, rank=4)
+    proj_own = project_deltas(a, a.with_weights(Wm), ids, rank=4)
+    assert proj_co.max() < 1e-4 and proj_own.min() > 0.5
+    # movement where the co-table has mass survives the co-tower basis
+    Wv = W.clone()
+    Wv[:, 8:12] += 1.0
+    assert project_deltas(a, a.with_weights(Wv), ids, basis_table=co, rank=4).min() > 0.5
+
+
+def test_covariance_weighted_deltas_matches_definition(make_table):
+    g = torch.Generator().manual_seed(2)
+    W, Wn = torch.randn(200, 8, generator=g), torch.randn(200, 8, generator=g)
+    co_W = torch.randn(500, 8, generator=g)
+    a = make_table(ids=np.arange(200), dim=8, weights=W)
+    co = make_table("co", ids=np.arange(500), dim=8, weights=co_W)
+    got = covariance_weighted_deltas(a, a.with_weights(Wn), np.arange(200), co)
+    C = torch.from_numpy(np.cov(co_W.numpy(), rowvar=False)).float()
+    want = torch.einsum("nd,de,ne->n", Wn - W, C, Wn - W).clamp_min(0).sqrt().numpy()
+    np.testing.assert_allclose(got, want, rtol=1e-4)
 
 
 def test_stable_since():

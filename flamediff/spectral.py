@@ -37,25 +37,46 @@ def table_spectrum(table: EmbeddingTable, sample: int = _SAMPLE) -> torch.Tensor
     return vals
 
 
-def project_deltas(
-    prev: EmbeddingTable, cur: EmbeddingTable, ids: np.ndarray, *,
-    energy: float = 0.90, rank: int | None = None, sample: int = _SAMPLE,
-) -> np.ndarray:
-    """Per-id ||delta|| projected onto cur's dominant covariance eigenbasis -- the top ``rank``
-    directions when given, else the smallest rank capturing ``energy`` of the variance.
-
-    Movement inside the subspace the table actually uses; the null-space component -- weight
-    motion with no behavioral surface -- is removed.
-    """
-    all_ids = cur.ids()
+def _sampled_cov_eig(table: EmbeddingTable, sample: int) -> tuple:
+    """Descending covariance eigenvalues/eigenvectors of a (sampled) table's rows."""
+    all_ids = table.ids()
     n = int(all_ids.size)
     basis_ids = (all_ids if n <= sample
                  else all_ids[np.random.default_rng(0).choice(n, sample, replace=False)])
-    vals, vecs = stats.row_covariance_eig(cur.gather(basis_ids).float())
+    return stats.row_covariance_eig(table.gather(basis_ids).float())
+
+
+def project_deltas(
+    prev: EmbeddingTable, cur: EmbeddingTable, ids: np.ndarray, *,
+    energy: float = 0.90, rank: int | None = None, basis_table: EmbeddingTable | None = None,
+    sample: int = _SAMPLE,
+) -> np.ndarray:
+    """Per-id ||delta|| projected onto a dominant covariance eigenbasis -- the top ``rank``
+    directions when given, else the smallest rank capturing ``energy`` of the variance.
+
+    The basis defaults to cur's own rows (movement inside the subspace the table itself uses).
+    Pass ``basis_table`` to project onto *another* table's basis -- for a dot-product model, the
+    co-tower's covariance defines behavioral relevance (movement only matters where the
+    co-embeddings have mass), and both tables are in the same checkpoint at diff time.
+    """
+    vals, vecs = _sampled_cov_eig(basis_table if basis_table is not None else cur, sample)
     r = max(1, stats.rank_at_energy(vals, energy) if rank is None else int(rank))
     V = vecs[:, :r]  # [dim, r]
     delta = cur.gather(ids).float() - prev.gather(ids).float()
     return (delta @ V).norm(dim=1).cpu().numpy()
+
+
+def covariance_weighted_deltas(
+    prev: EmbeddingTable, cur: EmbeddingTable, ids: np.ndarray, weight_table: EmbeddingTable, *,
+    sample: int = _SAMPLE,
+) -> np.ndarray:
+    """Per-id sqrt(delta' C delta), with C the (sampled) row covariance of ``weight_table`` --
+    the interaction-weighted drift norm, no truncation. For a dot-product model with
+    ``weight_table`` = the co-tower, this is how much the id's *scores* against a typical
+    co-embedding move, computed purely from weights."""
+    vals, vecs = _sampled_cov_eig(weight_table, sample)
+    delta = cur.gather(ids).float() - prev.gather(ids).float()
+    return ((delta @ vecs) * vals.clamp_min(0).sqrt()).norm(dim=1).cpu().numpy()
 
 
 @dataclass
