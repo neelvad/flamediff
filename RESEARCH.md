@@ -29,12 +29,17 @@ real behavioral change?
 
 ## Result
 
-| `DIM` (rank = 4) | final train loss | AUC behavior | **AUC weight (raw ‖Δ‖)** | AUC residual |
-|---|---|---|---|---|
-| 8  | 0.36 | 0.562 | **0.591** | 0.591 |
-| 16 | 0.33 | 0.586 | **0.604** | 0.596 |
-| 32 | 0.42 | 0.567 | **0.593** | 0.598 |
-| 64 | 0.76 | 0.536 | **0.548** | 0.554 |
+The **projected** columns are the follow-up experiment (see *Does subspace projection repair the
+dilution?* below): per-id drift projected onto the table's dominant covariance eigenbasis before
+scoring — at an automatic 90%-energy rank (`proj@e90`), and at a fixed `2×RANK = 8` oracle
+(`proj@r8`). `rank90` is the automatic rank chosen (how concentrated the covariance actually was).
+
+| `DIM` (rank = 4) | final train loss | `rank90` | AUC behavior | **AUC weight (raw ‖Δ‖)** | AUC residual | AUC proj@e90 | AUC proj@r8 |
+|---|---|---|---|---|---|---|---|
+| 8  | 0.36 | 5  | 0.562 | **0.591** | 0.591 | 0.584 | 0.591 |
+| 16 | 0.33 | 9  | 0.586 | **0.604** | 0.596 | 0.606 | 0.607 |
+| 32 | 0.42 | 18 | 0.567 | **0.593** | 0.598 | 0.595 | 0.594 |
+| 64 | 0.76 | 42 | 0.536 | **0.548** | 0.554 | 0.546 | 0.552 |
 
 ## Findings (honest)
 
@@ -56,6 +61,32 @@ real behavioral change?
 when embeddings are reasonably tight; the link dilutes as they over-parameterize. Not a slam dunk —
 which is exactly why it's worth shipping the result either way.
 
+## Does subspace projection repair the dilution? (follow-up — a clean negative)
+
+If finding 2's mechanism is right — at `DIM ≫ rank`, most movement is behaviorally-irrelevant
+null-space motion — then projecting each id's Δ onto the table's *dominant covariance eigenbasis*
+before scoring should discard the null-space component and recover the AUC at `DIM = 64`.
+`flamediff.spectral.project_deltas` does exactly that; the sweep (fully seeded, so the baseline
+columns reproduce bit-for-bit) adds it at an automatic 90%-energy rank and at a fixed `2×RANK`
+oracle.
+
+**It doesn't.** Projection is flat everywhere (±0.006 of raw ‖Δ‖), including at `DIM = 64`
+(0.548 raw → 0.546/0.552 projected). The `rank90` column says why: the embedding covariance is
+*not* concentrated near the true task rank — at `DIM = 64` its 90%-energy subspace is **42-dim**
+(vs task rank 4). The variance the table carries is spread across most of the space (noise +
+under-convergence), so "the table's top-variance subspace" is not "the behavioral subspace", and
+covariance-based projection removes almost nothing that raw ‖Δ‖ didn't already keep. Even the
+fixed `r = 8` oracle doesn't help — the behaviorally-relevant directions are evidently not the
+top-*variance* directions of the table itself.
+
+The sharpened hypothesis this leaves: behavioral relevance in a dot-product model is defined by
+the *other tower* (movement matters where the co-embeddings have mass), so the right projection
+basis is the interaction-weighted one — e.g. the covariance of the *opposing* table, or a
+CCA-style joint basis — not the table's own. That needs the co-table at diff time (flamediff has
+it: both tables are in the same checkpoint) and is the natural next experiment. Meanwhile the
+practical reading of the dilution stands, unrepaired: keep embeddings tight if you want weight
+diffs to track behavior.
+
 ## What the iteration taught us (methodology)
 
 Getting a *valid* behavioral probe out of a toy model surfaced real subtleties, each a lesson:
@@ -67,6 +98,9 @@ Getting a *valid* behavioral probe out of a toy model surfaced real subtleties, 
 - Dot-product **MF with SGD stalls** (vanishing gradients at small init) → use Adam.
 - A **shared, moving panel** swamps per-id behavior → freeze the panel to isolate each id.
 - **Over-parameterization** (`DIM ≫ rank`) → null-space drift dilutes the weight↔behavior link.
+- A table's **own covariance eigenbasis is not its behavioral basis** — projecting Δ onto the
+  top-variance subspace doesn't recover the diluted signal; behavioral relevance lives in the
+  interaction (the other tower), not in the table's variance structure.
 
 ## Limitations
 
