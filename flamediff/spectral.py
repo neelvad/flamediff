@@ -39,9 +39,10 @@ def table_spectrum(table: EmbeddingTable, sample: int = _SAMPLE) -> torch.Tensor
 
 def project_deltas(
     prev: EmbeddingTable, cur: EmbeddingTable, ids: np.ndarray, *,
-    energy: float = 0.90, sample: int = _SAMPLE,
+    energy: float = 0.90, rank: int | None = None, sample: int = _SAMPLE,
 ) -> np.ndarray:
-    """Per-id ||delta|| projected onto cur's dominant (energy-rank) covariance eigenbasis.
+    """Per-id ||delta|| projected onto cur's dominant covariance eigenbasis -- the top ``rank``
+    directions when given, else the smallest rank capturing ``energy`` of the variance.
 
     Movement inside the subspace the table actually uses; the null-space component -- weight
     motion with no behavioral surface -- is removed.
@@ -51,7 +52,7 @@ def project_deltas(
     basis_ids = (all_ids if n <= sample
                  else all_ids[np.random.default_rng(0).choice(n, sample, replace=False)])
     vals, vecs = stats.row_covariance_eig(cur.gather(basis_ids).float())
-    r = max(1, stats.rank_at_energy(vals, energy))
+    r = max(1, stats.rank_at_energy(vals, energy) if rank is None else int(rank))
     V = vecs[:, :r]  # [dim, r]
     delta = cur.gather(ids).float() - prev.gather(ids).float()
     return (delta @ V).norm(dim=1).cpu().numpy()
