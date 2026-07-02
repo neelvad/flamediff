@@ -1,0 +1,31 @@
+# Publish to PyPI on a version tag (e.g. `git tag v0.1.0 && git push origin v0.1.0`).
+# Uses PyPI trusted publishing (no token in the repo): one-time setup at
+# https://pypi.org/manage/account/publishing/ — add publisher repo=neelvad/flamediff,
+# workflow=release.yml, environment=pypi.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync
+      - run: uv run ruff check .
+      - run: uv run pytest -q -m "not integration"  # fixtures aren't checked in
+
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write  # trusted publishing
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv build
+      - uses: pypa/gh-action-pypi-publish@release/v1
