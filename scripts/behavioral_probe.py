@@ -6,10 +6,11 @@ on a rank-RANK latent task. Midway, flip the target relationship (latent -> -lat
 popularity-spanning subset of author ids: they must relearn -- a genuine meaning change that is, by
 construction, independent of popularity. Checkpoint the MCEC and record canary-grid predictions.
 Then, holding the TASK fixed, SWEEP the embedding dim and measure, per dim, how well weight-space
-drift (raw ||delta||, flamediff's de-confounded residual, and the SUBSPACE-PROJECTED ||delta|| --
-drift with the null-space component removed, at an automatic 90%-energy rank and at a fixed
-2*RANK oracle) identifies the ids whose behavior actually changed -- yielding a degradation curve
-vs over-parameterization (dim >> latent rank) and a test of whether null-space removal repairs it.
+drift identifies the ids whose behavior actually changed. Scorers: raw ||delta||, flamediff's
+de-confounded residual, own-basis subspace projection (a shipped negative -- kept as baseline),
+and the INTERACTION-WEIGHTED variants: projection onto the CO-tower's covariance eigenbasis, and
+the full covariance-weighted norm sqrt(d' C_video d) -- for a dot-product model, movement only
+matters where the co-embeddings have mass, so the co-tower defines behavioral relevance.
 
 Computes on Modal (flamediff mounted); returns the curve as JSON.
 
@@ -155,52 +156,55 @@ def experiment() -> str:
 
         from flamediff import diff_table, load_checkpoint
         from flamediff.attribute import attribute_table
-        from flamediff.spectral import project_deltas, table_spectrum
+        from flamediff.spectral import covariance_weighted_deltas, project_deltas, table_spectrum
         from flamediff.stats import rank_at_energy
         cks = [load_checkpoint(os.path.join(tmp, f"ckpt_{i:03d}")) for i in range(WARMUP, CKPTS)]
         is_shifted = shift_mask[canary["author_id"]]
-        acc = {k: np.zeros(N_CANARY) for k in ("resid", "raw", "proj_e90", "proj_r8", "beh", "n")}
+        scores = ("resid", "raw", "proj_e90", "proj_r8", "xproj_e90", "xproj_r8", "xweight",
+                  "beh", "n")
+        acc = {k: np.zeros(N_CANARY) for k in scores}
         rank90 = 0
         for i in range(1, len(cks)):
             gi = WARMUP + i
             prev = cks[i - 1].embedding_tables["author_id_emb"]
             cur = cks[i].embedding_tables["author_id_emb"]
+            co = cks[i].embedding_tables["video_id_emb"]  # the co-tower defines what gets READ
             diff = diff_table(prev, cur)
             attr = attribute_table(prev, cur, diff)
             beh = np.linalg.norm(fps[gi]["author_id"] - fps[gi - 1]["author_id"], axis=1)
             if FLIP_AT < gi <= FLIP_AT + POST_WINDOW:  # the immediate relearning window
-                # subspace-projected ||delta||: drop null-space motion (the dilution hypothesis).
-                # e90 = automatic rank (90% energy); r8 = fixed 2*RANK (a true-rank oracle).
-                proj_e90 = project_deltas(prev, cur, diff.surv_ids, energy=0.90)
-                proj_r8 = project_deltas(prev, cur, diff.surv_ids, rank=2 * RANK)
+                s = diff.surv_ids
+                per = {
+                    # own-basis projection: drop the table's own null-space motion (negative
+                    # result -- kept as the baseline the interaction-weighted variants must beat)
+                    "proj_e90": project_deltas(prev, cur, s, energy=0.90),
+                    "proj_r8": project_deltas(prev, cur, s, rank=2 * RANK),
+                    # interaction-weighted: behavioral relevance = where the CO-tower has mass
+                    "xproj_e90": project_deltas(prev, cur, s, energy=0.90, basis_table=co),
+                    "xproj_r8": project_deltas(prev, cur, s, rank=2 * RANK, basis_table=co),
+                    "xweight": covariance_weighted_deltas(prev, cur, s, co),
+                    "resid": attr.idiosyncratic, "raw": diff.delta_norm,
+                }
                 rank90 = rank_at_energy(table_spectrum(cur), 0.90)
-                o = {int(s): j for j, s in enumerate(diff.surv_ids)}
+                o = {int(x): j for j, x in enumerate(s)}
                 j = np.array([o.get(int(a), -1) for a in canary["author_id"]])
                 m = j >= 0
-                acc["resid"][m] += attr.idiosyncratic[j[m]]
-                acc["raw"][m] += diff.delta_norm[j[m]]
-                acc["proj_e90"][m] += proj_e90[j[m]]
-                acc["proj_r8"][m] += proj_r8[j[m]]
+                for k, v in per.items():
+                    acc[k][m] += v[j[m]]
                 acc["beh"][m] += beh[m]
                 acc["n"][m] += 1
         ok = acc["n"] > 0
-        return {
-            "dim": dim, "final_loss": round(ck_loss[-1], 4), "n": int(ok.sum()),
-            "rank90": rank90,
-            "auc_behavior": round(_auc(acc["beh"][ok], is_shifted[ok]), 3),
-            "auc_raw_delta": round(_auc(acc["raw"][ok], is_shifted[ok]), 3),
-            "auc_residual": round(_auc(acc["resid"][ok], is_shifted[ok]), 3),
-            "auc_proj_e90": round(_auc(acc["proj_e90"][ok], is_shifted[ok]), 3),
-            "auc_proj_r8": round(_auc(acc["proj_r8"][ok], is_shifted[ok]), 3),
-        }
+        row = {"dim": dim, "final_loss": round(ck_loss[-1], 4), "n": int(ok.sum()),
+               "rank90": rank90,
+               "auc_behavior": round(_auc(acc["beh"][ok], is_shifted[ok]), 3)}
+        for k in ("raw", "resid", "proj_e90", "proj_r8", "xproj_e90", "xproj_r8", "xweight"):
+            row[f"auc_{k}"] = round(_auc(acc[k][ok], is_shifted[ok]), 3)
+        return row
 
     curve = []
     for dim in DIMS:
         row = run_one(dim)
-        print(f"dim={row['dim']:2d}  loss={row['final_loss']:.3f}  rank90={row['rank90']:2d}  "
-              f"auc_behavior={row['auc_behavior']:.3f}  auc_raw_delta={row['auc_raw_delta']:.3f}  "
-              f"auc_residual={row['auc_residual']:.3f}  auc_proj_e90={row['auc_proj_e90']:.3f}  "
-              f"auc_proj_r8={row['auc_proj_r8']:.3f}")
+        print("  ".join(f"{k}={v}" for k, v in row.items()))
         curve.append(row)
 
     result = {"config": {"rank": RANK, "flip_at": FLIP_AT, "shift_frac": SHIFT_FRAC,
