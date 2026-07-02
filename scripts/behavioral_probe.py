@@ -223,10 +223,10 @@ N_SEEDS = 5
 @app.local_entrypoint()
 def main():
     """Fan the seeds out as parallel containers, then aggregate mean +- std and the PAIRED
-    within-seed contrasts that test the two claims (dilution and its attempted repair)."""
+    within-seed contrasts that test the two claims (dilution and its attempted repair).
+    Stdlib-only aggregation: the local entrypoint runs in the modal CLI's env, not the venv."""
     import json as _json
-
-    import numpy as _np
+    from statistics import mean, stdev
 
     runs = [_json.loads(r) for r in experiment.map(range(N_SEEDS))]
     by_dim = {dim: [next(row for row in r["curve"] if row["dim"] == dim) for r in runs]
@@ -237,16 +237,15 @@ def main():
     for dim in DIMS:
         cells = []
         for k in keys:
-            v = _np.array([row[k] for row in by_dim[dim]], dtype=float)
+            v = [float(row[k]) for row in by_dim[dim]]
             label = k[4:] if k.startswith("auc_") else k
-            cells.append(f"{label}={v.mean():.3f}±{v.std(ddof=1):.3f}")
+            cells.append(f"{label}={mean(v):.3f}±{stdev(v):.3f}")
         print(f"dim={dim:2d}  " + "  ".join(cells))
 
     def paired(a_dim, a_key, b_dim, b_key):
-        d = _np.array([by_dim[a_dim][s][a_key] - by_dim[b_dim][s][b_key]
-                       for s in range(N_SEEDS)])
-        wins = int((d > 0).sum())
-        return f"{d.mean():+.3f}±{d.std(ddof=1):.3f} ({wins}/{N_SEEDS} seeds >0)"
+        d = [by_dim[a_dim][s][a_key] - by_dim[b_dim][s][b_key] for s in range(N_SEEDS)]
+        wins = sum(1 for x in d if x > 0)
+        return f"{mean(d):+.3f}±{stdev(d):.3f} ({wins}/{N_SEEDS} seeds >0)"
 
     print("\n=== paired within-seed contrasts ===")
     print("dilution   raw@16 - raw@64:      ", paired(16, "auc_raw", 64, "auc_raw"))
