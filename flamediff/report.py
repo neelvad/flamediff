@@ -62,6 +62,74 @@ class EnrichedEvent:
 
 
 @dataclass
+class Incident:
+    """One underlying training incident: the events that fired together in a short index window,
+    across tables / metrics / detectors, headlined by the strongest signal. One real cause (a data
+    spike, a regime change) typically fires many series at once -- reporting the flat event list
+    reads as dozens of anomalies when it is really a handful of incidents."""
+
+    events: list[EnrichedEvent]  # severity desc; events[0] is the headline
+
+    @property
+    def headline(self) -> EnrichedEvent:
+        return self.events[0]
+
+    @property
+    def severity(self) -> float:
+        return self.headline.severity
+
+    @property
+    def steps(self) -> list[int]:
+        return sorted({ee.event.step for ee in self.events})
+
+    @property
+    def tables(self) -> list[str]:
+        return sorted({ee.event.table for ee in self.events})
+
+    def span(self) -> str:
+        s = self.steps
+        return f"step {s[0]}" if len(s) == 1 else f"steps {s[0]}–{s[-1]}"
+
+    def to_lines(self) -> list[str]:
+        head = (f"  ▌ {self.span()}  worst {self.severity:.1f}×  "
+                f"({len(self.events)} signals, {len(self.tables)} tables)")
+        lines = [head] + ["  " + ln for ln in self.headline.to_line().split("\n")]
+        rest = self.events[1:]
+        if rest:
+            shown = ", ".join(f"{ee.event.table}.{ee.event.metric} {ee.severity:.1f}×"
+                              for ee in rest[:3])
+            more = f", +{len(rest) - 3} more" if len(rest) > 3 else ""
+            lines.append(f"         also: {shown}{more}")
+        return lines
+
+    def to_dict(self, event_pos: dict) -> dict:
+        """JSON form; events are referenced by their position in the report's flat event list."""
+        return {
+            "steps": self.steps, "tables": self.tables,
+            "severity": round(self.severity, 3), "n_events": len(self.events),
+            "events": [event_pos[id(ee)] for ee in self.events],
+        }
+
+
+def group_incidents(events: list[EnrichedEvent], *, gap: int = 1) -> list[Incident]:
+    """Cluster events into incidents by diff-index adjacency: chains of events whose indices are
+    within ``gap`` of each other, across tables / metrics / detectors (PH and PELT flag the same
+    cause a step or two after robust_z). Incidents and their events are sorted by severity desc."""
+    if not events:
+        return []
+    by_index = sorted(events, key=lambda ee: ee.event.index)
+    clusters = [[by_index[0]]]
+    for ee in by_index[1:]:
+        if ee.event.index - clusters[-1][-1].event.index <= gap:
+            clusters[-1].append(ee)
+        else:
+            clusters.append([ee])
+    incidents = [Incident(sorted(c, key=lambda ee: ee.severity, reverse=True)) for c in clusters]
+    incidents.sort(key=lambda inc: inc.severity, reverse=True)
+    return incidents
+
+
+@dataclass
 class Report:
     run: str
     n_checkpoints: int
@@ -75,13 +143,20 @@ class Report:
     def worst_severity(self) -> float:
         return max((e.severity for e in self.events), default=0.0)
 
+    def incidents(self, *, gap: int = 1) -> list[Incident]:
+        return group_incidents(self.events, gap=gap)
+
     def to_dict(self) -> dict:
+        incidents = self.incidents()
+        event_pos = {id(ee): i for i, ee in enumerate(self.events)}
         return {
             "run": self.run, "n_checkpoints": self.n_checkpoints, "tables": self.tables,
             "calibration": self.calibration, "target_fpr": self.target_fpr,
             "min_severity": self.min_severity, "n_events": len(self.events),
+            "n_incidents": len(incidents),
             "worst_severity": round(self.worst_severity(), 3),
             "events": [e.to_dict() for e in self.events],
+            "incidents": [inc.to_dict(event_pos) for inc in incidents],
             "series": self.series,
         }
 
@@ -100,28 +175,36 @@ class Report:
         if not self.events:
             lines.append(f"no anomalies (calibrated severity ≥ {self.min_severity:g})")
             return "\n".join(lines)
-        lines.append(f"ANOMALIES (calibrated severity ≥ {self.min_severity:g}, most severe first):")
-        lines += [ee.to_line() for ee in self.events]
+        incidents = self.incidents()
+        lines.append(f"INCIDENTS (calibrated severity ≥ {self.min_severity:g}, "
+                     f"most severe first):")
+        for inc in incidents:
+            lines += inc.to_lines()
         worst = self.events[0]
-        lines += ["", f"SUMMARY: {len(self.events)} anomalies across {len(self.tables)} tables; "
+        lines += ["", f"SUMMARY: {len(incidents)} incidents ({len(self.events)} signals) across "
+                  f"{len(self.tables)} tables; "
                   f"worst step {worst.event.step} ({worst.event.table}.{worst.event.metric} "
                   f"{worst.severity:.1f}×)"]
         return "\n".join(lines)
 
     def to_markdown(self) -> str:
+        incidents = self.incidents()
         out = [f"# flamediff report — `{self.run}`", "",
                f"- checkpoints: **{self.n_checkpoints}**, tables: {', '.join(self.tables)}",
                f"- calibration: {self.calibration}",
-               f"- anomalies (≥ {self.min_severity:g}×): **{len(self.events)}**, "
-               f"worst **{self.worst_severity():.1f}×**", ""]
-        if self.events:
-            out += ["| step | table.metric | severity | method | why |",
+               f"- incidents (≥ {self.min_severity:g}×): **{len(incidents)}** "
+               f"({len(self.events)} signals), worst **{self.worst_severity():.1f}×**", ""]
+        for i, inc in enumerate(incidents, 1):
+            out += [f"## incident {i} — {inc.span()}, worst {inc.severity:.1f}× "
+                    f"({len(inc.events)} signals)", "",
+                    "| step | table.metric | severity | method | why |",
                     "|---|---|---|---|---|"]
-            for ee in self.events:
+            for ee in inc.events:
                 e = ee.event
                 out.append(f"| {e.step} | `{e.table}.{e.metric}` | {ee.severity:.1f}× | "
                            f"{e.method} | {ee.why.text} |")
-        return "\n".join(out) + "\n"
+            out.append("")
+        return "\n".join(out).rstrip("\n") + "\n"
 
 
 def _why_ctx_entry(prev_table, cur_table, td) -> dict:

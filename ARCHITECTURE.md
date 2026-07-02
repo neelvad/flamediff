@@ -166,6 +166,13 @@ runs trajectory → detect → attribute and attaches a `Why` to each calibrated
 - **movement / geometry / scorer** metrics → the table's `Attribution` (global / popularity /
   idiosyncratic + top movers).
 
+**Incident grouping:** one underlying cause (a data spike, a regime change) fires many series at
+once — robust_z at the spike, PH/PELT a step or two later, across tables and metrics — so the flat
+event list reads as dozens of anomalies when it is really a handful. `group_incidents` clusters
+events by diff-index adjacency (chained, `gap=1`) into `Incident`s, each headlined by its strongest
+signal; all renderers (text / JSON / markdown / HTML) present incidents as the primary unit, with
+the constituent signals nested under them.
+
 `Report` renders to text / JSON / markdown and exposes `worst_severity()`. CLI (Typer):
 `flamediff report <run_dir>` with `--json`, `--md`, `--table`, `--min-severity`, and
 `--fail-on <sev>` — a **CI gate** that exits nonzero past a severity (fail a training run on drift).

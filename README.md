@@ -58,17 +58,23 @@ flamediff watch <run_dir> --fail-on 8         # guard a live run; exit nonzero o
 flamediff serve <run_dir> --interval 600      # live browsable dashboard, auto-refreshing
 ```
 
-Sample output — every anomaly carries a *why* (a churn breakdown, or the drift attribution):
+Sample output — correlated signals are grouped into **incidents** (one underlying cause fires many
+series at once), and every signal carries a *why* (a churn breakdown, or the drift attribution):
 
 ```text
 flamediff report — run_1782312586  (24 ckpts, 2 tables)  cal=REAL (FPR 0.05)
 
-ANOMALIES (calibrated severity ≥ 1, most severe first):
-  ● step 250  author_id_emb.inserted_rate   17.6×  [page_hinkley]
-       why: churn down: 1195 inserted / 1195 evicted / 0 re-admitted / 4 slot-moved
-  ● step 700  video_id_emb.n_freq_resid_hi    1.3×  [robust_z]
-       why: idiosyncratic drift (global 0%, popularity r²=0.23, residual 100%); movers 0, 30004, 1
-SUMMARY: 45 anomalies across 2 tables; worst step 250 (author_id_emb.inserted_rate 17.6×)
+INCIDENTS (calibrated severity ≥ 1, most severe first):
+  ▌ steps 250–450  worst 17.6×  (27 signals, 2 tables)
+    ● step 250  author_id_emb.inserted_rate  17.6×  [page_hinkley]
+         why: churn down: 1195 inserted / 1195 evicted / 0 re-admitted / 4 slot-moved
+         also: video_id_emb.inserted_rate 16.7×, video_id_emb.evicted_rate 4.8×, +24 more
+  ▌ steps 550–700  worst 2.4×  (18 signals, 2 tables)
+    ● step 600  author_id_emb.evicted_rate  2.4×  [pelt]
+         why: churn down: 28 inserted / 28 evicted / 0 re-admitted / 0 slot-moved
+         also: video_id_emb.evicted_rate 2.3×, author_id_emb.evicted_rate 2.1×, +15 more
+
+SUMMARY: 2 incidents (45 signals) across 2 tables; worst step 250 (author_id_emb.inserted_rate 17.6×)
 ```
 
 ## Development

@@ -46,6 +46,7 @@ border-left:3px solid var(--surface2);border-radius:4px;cursor:pointer;align-ite
 .ev.s5{border-left-color:var(--red)} .ev.s2{border-left-color:var(--peach)} .ev.s1{border-left-color:var(--yellow)}
 .ev .step{color:var(--overlay);font-size:12px}
 .ev .m{color:var(--sub)} .ev .sev{font-weight:bold;color:var(--peach)}
+.evgrp{padding:8px 8px 2px;color:var(--overlay);font-size:11px;text-transform:uppercase;letter-spacing:.06em}
 #detailbody{background:var(--mantle);border:1px solid var(--surface);border-radius:6px;padding:14px;min-height:220px}
 .tag{font-size:11px;padding:1px 7px;border-radius:9px;background:var(--surface);color:var(--sub)}
 .bar{margin:8px 0}
@@ -94,20 +95,30 @@ function detail(e){
   h+=`<div class="dim">value ${e.value} vs baseline ${e.baseline} (${e.direction})</div>`;
   b.innerHTML=h;
 }
-function renderEvents(list){
+function renderEvents(list,incs){
   const el=document.getElementById('evlist'); el.innerHTML='';
   if(!list.length){el.innerHTML='<div class="ev">no anomalies</div>';document.getElementById('detailbody').innerHTML='';return;}
-  let sel=null;
-  list.forEach(e=>{
+  let sel=null,first=null;
+  const addRow=e=>{
     const r=document.createElement('div'); r.className='ev '+sc(e.severity);
     r.innerHTML=`<span class="step">${e.step}</span>`
       +`<span>${tn(e.table)}<span class="m">.${e.metric}</span></span>`
       +`<span class="sev">${e.severity.toFixed(1)}×</span>`;
     r.onclick=()=>{document.querySelectorAll('.ev').forEach(x=>x.classList.remove('sel'));r.classList.add('sel');detail(e);};
     if(evkey(e)===SEL)sel=[r,e];
+    if(!first)first=[r,e];
     el.appendChild(r);
-  });
-  if(!sel)sel=[el.firstChild,list[0]];
+  };
+  if(incs&&incs.length){
+    incs.forEach(inc=>{
+      const h=document.createElement('div'); h.className='evgrp';
+      const st=inc.steps.length>1?`steps ${inc.steps[0]}–${inc.steps[inc.steps.length-1]}`:`step ${inc.steps[0]}`;
+      h.textContent=`${st} · ${inc.n_events} signal${inc.n_events>1?'s':''} · worst ${inc.severity.toFixed(1)}×`;
+      el.appendChild(h);
+      inc.events.forEach(i=>addRow(list[i]));
+    });
+  }else list.forEach(addRow);
+  if(!sel)sel=first;
   sel[0].classList.add('sel'); detail(sel[1]);
 }
 function renderGrid(){
@@ -149,8 +160,8 @@ function apply(D){
   DATA=D;
   document.getElementById('run').textContent=D.run;
   document.getElementById('meta').textContent=`${D.n_checkpoints} checkpoints · ${D.tables.length} tables · cal: ${(D.calibration||'').split(':')[0]}`;
-  document.getElementById('worst').textContent=`worst ${D.worst_severity}× · ${D.n_events} anomalies`;
-  renderGrid(); renderEvents(D.events);
+  document.getElementById('worst').textContent=`worst ${D.worst_severity}× · ${D.n_incidents!=null?D.n_incidents+' incidents ('+D.n_events+' signals)':D.n_events+' anomalies'}`;
+  renderGrid(); renderEvents(D.events,D.incidents);
 }
 const POLL=__POLL_MS__;
 apply(JSON.parse(document.getElementById('flamediff-data').textContent));
