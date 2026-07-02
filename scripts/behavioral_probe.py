@@ -50,7 +50,7 @@ def _auc(score, positive):
 
 
 @app.function(gpu="A10G", volumes={"/data": vol}, timeout=60 * 60)
-def experiment() -> str:
+def experiment(seed: int = 0) -> str:
     import json
     import os
     import tempfile
@@ -69,8 +69,9 @@ def experiment() -> str:
 
     device = torch.device("cuda")
 
-    # ---- the TASK, fixed across all dims: latents, the flipped subset, the canary grid ----
-    trng = np.random.default_rng(0)
+    # ---- the TASK, fixed across all dims (but varied per seed -- each seed is a full
+    # independent replication: new latents, flip set, canaries, data stream, and init) ----
+    trng = np.random.default_rng(1000 + seed)
     latent = {f: trng.standard_normal((HOT, RANK)).astype(np.float32) for f in FEATURES}
     shift_mask = np.zeros(VOCAB, dtype=bool)
     shift_mask[trng.choice(HOT, size=int(HOT * SHIFT_FRAC), replace=False)] = True
@@ -85,8 +86,8 @@ def experiment() -> str:
         return np.where(shift_mask[raw_a], -t, t) if flipped else t
 
     def run_one(dim):
-        rng = np.random.default_rng(1)  # identical data stream for every dim
-        torch.manual_seed(0)
+        rng = np.random.default_rng(2000 + seed)  # identical data stream for every dim
+        torch.manual_seed(seed)
         configs = [EmbeddingConfig(name=f"{f}_emb", embedding_dim=dim, num_embeddings=ZCH,
                                    feature_names=[f]) for f in FEATURES]
         ec = EmbeddingCollection(tables=configs, device=device)
@@ -204,17 +205,57 @@ def experiment() -> str:
     curve = []
     for dim in DIMS:
         row = run_one(dim)
-        print("  ".join(f"{k}={v}" for k, v in row.items()))
+        print(f"seed={seed}  " + "  ".join(f"{k}={v}" for k, v in row.items()))
         curve.append(row)
 
-    result = {"config": {"rank": RANK, "flip_at": FLIP_AT, "shift_frac": SHIFT_FRAC,
+    result = {"seed": seed,
+              "config": {"rank": RANK, "flip_at": FLIP_AT, "shift_frac": SHIFT_FRAC,
                          "canary": N_CANARY, "post_window": POST_WINDOW}, "curve": curve}
-    with open("/data/behavioral_curve.json", "w") as fh:
+    with open(f"/data/behavioral_curve_seed{seed}.json", "w") as fh:
         json.dump(result, fh, indent=2)
     vol.commit()
     return json.dumps(result)
 
 
+N_SEEDS = 5
+
+
 @app.local_entrypoint()
 def main():
-    print(experiment.remote())
+    """Fan the seeds out as parallel containers, then aggregate mean +- std and the PAIRED
+    within-seed contrasts that test the two claims (dilution and its attempted repair)."""
+    import json as _json
+
+    import numpy as _np
+
+    runs = [_json.loads(r) for r in experiment.map(range(N_SEEDS))]
+    by_dim = {dim: [next(row for row in r["curve"] if row["dim"] == dim) for r in runs]
+              for dim in DIMS}
+    keys = [k for k in by_dim[DIMS[0]][0] if k.startswith("auc_")] + ["final_loss", "rank90"]
+
+    print(f"\n=== mean +- std over {N_SEEDS} seeds ===")
+    for dim in DIMS:
+        cells = []
+        for k in keys:
+            v = _np.array([row[k] for row in by_dim[dim]], dtype=float)
+            label = k[4:] if k.startswith("auc_") else k
+            cells.append(f"{label}={v.mean():.3f}±{v.std(ddof=1):.3f}")
+        print(f"dim={dim:2d}  " + "  ".join(cells))
+
+    def paired(a_dim, a_key, b_dim, b_key):
+        d = _np.array([by_dim[a_dim][s][a_key] - by_dim[b_dim][s][b_key]
+                       for s in range(N_SEEDS)])
+        wins = int((d > 0).sum())
+        return f"{d.mean():+.3f}±{d.std(ddof=1):.3f} ({wins}/{N_SEEDS} seeds >0)"
+
+    print("\n=== paired within-seed contrasts ===")
+    print("dilution   raw@16 - raw@64:      ", paired(16, "auc_raw", 64, "auc_raw"))
+    print("repair(own) proj_r8@64 - raw@64:  ", paired(64, "auc_proj_r8", 64, "auc_raw"))
+    print("repair(x)  xproj_r8@64 - raw@64:  ", paired(64, "auc_xproj_r8", 64, "auc_raw"))
+    print("repair(xw) xweight@64 - raw@64:   ", paired(64, "auc_xweight", 64, "auc_raw"))
+    print("resid      resid@64 - raw@64:     ", paired(64, "auc_resid", 64, "auc_raw"))
+
+    out = {"n_seeds": N_SEEDS, "runs": runs}
+    with open("fixtures/behavioral_multiseed.json", "w") as fh:
+        _json.dump(out, fh, indent=2)
+    print("\nwrote fixtures/behavioral_multiseed.json")
