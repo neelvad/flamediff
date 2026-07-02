@@ -6,6 +6,7 @@ the run's own trajectory and is the deferred detection layer).
 from __future__ import annotations
 
 import numpy as np
+import torch
 
 from flamediff import stats
 from flamediff.types import (
@@ -22,21 +23,25 @@ _GEOM_SAMPLE = 8192  # cap rows gathered for the covariance geometry (avoids ful
 _GATHER_BATCH = 1 << 20  # survivors gathered per batch -> bounds peak to batch x dim (out-of-core)
 
 
-def _geom(table: EmbeddingTable) -> GeomStats:
+def _geom(table: EmbeddingTable) -> tuple[GeomStats, torch.Tensor, torch.Tensor]:
+    """GeomStats plus the (descending) covariance eigenvalues/eigenvectors of a row sample --
+    the eigenbasis feeds the prev-vs-cur subspace-overlap measurement in ``diff_table``."""
     ids = table.ids()
     n = int(ids.size)
     if n == 0:
-        return GeomStats(0, 0.0, 0.0, 0.0)
+        return GeomStats(0, 0.0, 0.0, 0.0), torch.zeros(table.dim), torch.eye(table.dim)
     if n > _GEOM_SAMPLE:  # subsample so geometry is O(sample), not O(whole table)
         ids = ids[np.random.default_rng(0).choice(n, _GEOM_SAMPLE, replace=False)]
     W = table.gather(ids).float()
-    eig = stats.row_covariance_eigvals(W)
-    return GeomStats(
+    eigvals, eigvecs = stats.row_covariance_eig(W)
+    geom = GeomStats(
         n=n,
         mean_row_norm=stats.mean_row_norm(W),
-        effective_rank=stats.effective_rank_from_spectrum(eig),
-        anisotropy=stats.anisotropy_from_spectrum(eig),
+        effective_rank=stats.effective_rank_from_spectrum(eigvals),
+        anisotropy=stats.anisotropy_from_spectrum(eigvals),
+        rank95=stats.rank_at_energy(eigvals, 0.95),
     )
+    return geom, eigvals, eigvecs
 
 
 def _streamed_row_stats(
@@ -90,6 +95,12 @@ def diff_table(
         delta_norm = cosine = freq_resid = frozen = np.zeros(0, dtype=np.float64)
         dcount = np.zeros(0, dtype=np.int64)
 
+    geom_prev, eig_p, vec_p = _geom(prev)
+    geom_cur, eig_c, vec_c = _geom(cur)
+    # overlap over prev's 90%-energy subspace: did the basis the table actually uses rotate?
+    overlap = (stats.subspace_overlap(vec_p, eig_c, vec_c, stats.rank_at_energy(eig_p, 0.90))
+               if geom_prev.n >= 2 and geom_cur.n >= 2 else 1.0)
+
     return EmbeddingTableDiff(
         name=cur.name,
         n_prev=int(ids_prev.size),
@@ -106,8 +117,9 @@ def diff_table(
         dcount=dcount,
         freq_resid=freq_resid,
         frozen_score=frozen,
-        geom_prev=_geom(prev),
-        geom_cur=_geom(cur),
+        geom_prev=geom_prev,
+        geom_cur=geom_cur,
+        subspace_overlap=overlap,
         inserted_ids=inserted if keep_ids else None,
         evicted_ids=evicted if keep_ids else None,
         slot_moved_ids=moved if keep_ids else None,

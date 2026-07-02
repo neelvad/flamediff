@@ -56,6 +56,9 @@ flamediff watch <run_dir> --interval 600      # stream NEW anomalies as checkpoi
 flamediff watch <run_dir> --fail-on 8         # guard a live run; exit nonzero on severe drift
 
 flamediff serve <run_dir> --interval 600      # live browsable dashboard, auto-refreshing
+
+flamediff rank <run_dir>                      # low-rank structure: rank-at-energy trajectories,
+                                              # factorization advisory (how small, and safe when?)
 ```
 
 Sample output — correlated signals are grouped into **incidents** (one underlying cause fires many

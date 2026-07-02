@@ -137,6 +137,30 @@ Findings on the synthetic battery: scramble is detectable to ~0.25× row-norm; f
 PELT is weak on transient spikes but strong on persistent shifts (detector specialization).
 (The shipped `calibration.json` is now **real-data-derived** — see `scripts/calibrate_real.py`.)
 
+## Spectral / low-rank layer (`spectral.py`, `flamediff rank`)
+
+The factorization-advisory surface, built on the same sampled dim×dim row covariance the diff's
+geometry uses (so it is cheap at any row count):
+- **Per-diff measurements** (`diff.py`): `GeomStats.rank95` — the smallest rank capturing ≥95% of
+  the table's variance — and `EmbeddingTableDiff.subspace_overlap` — the energy fraction of cur's
+  dominant (90%-energy) subspace captured by prev's eigenbasis (1.0 = the basis the table actually
+  uses did not rotate). Energy-weighted (`stats.subspace_overlap`), so robust to within-subspace
+  rotation and eigenvalue ties, unlike raw principal angles.
+- **`flamediff rank <run_dir>`** (`spectral_report`): per table, the rank-at-energy trajectory
+  (90/95/99%), the final energy-at-rank curve, and *when the rank stabilized* — answering the
+  compression-planning question directly: how small can a low-rank factorization be, and is it
+  safe to size it yet (factorizing before the rank plateaus bakes in a dimensionality the table
+  hasn't grown into).
+- **`project_deltas`**: per-id drift projected onto the table's dominant eigenbasis, removing the
+  null-space component — the RESEARCH.md hypothesis (null-space motion dilutes the
+  weight↔behavior link as DIM ≫ true rank) made testable; used by the behavioral probe.
+
+**Deliberately not series-ized into detection:** `rank95` is integer-quantized and
+`subspace_overlap` is pinned near 1.0, so their standardized scores are heavy-tailed on clean
+runs — pooled into the per-*method* calibrated null they inflate the shared thresholds and
+desensitize every other metric. Wiring them into detection needs per-*metric* calibration
+(a noted future step); until then they are measurement + advisory surfaces.
+
 ## Attribution — *why* a table drifted (`attribute.py`)
 
 A separate analysis layer over a table diff: `attribute_table(prev, cur, diff)` re-gathers the

@@ -55,6 +55,11 @@ def _emb_features(td: EmbeddingTableDiff) -> dict[str, float]:
         "effective_rank": td.geom_cur.effective_rank,
         "anisotropy": td.geom_cur.anisotropy,
         "mean_row_norm": td.geom_cur.mean_row_norm,
+        # NOT series-ized: rank95 (integer-quantized) and subspace_overlap (pinned near 1.0) have
+        # heavy-tailed standardized scores on clean runs, which inflates the pooled per-METHOD
+        # null the calibration thresholds share and desensitizes every other metric. They live in
+        # the diff result + the `flamediff rank` advisory; detection-ready versions need the
+        # per-metric calibration noted in ARCHITECTURE.md.
     }
 
 

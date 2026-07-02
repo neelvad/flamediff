@@ -134,6 +134,7 @@ class GeomStats:
     mean_row_norm: float
     effective_rank: float
     anisotropy: float
+    rank95: int = 0  # smallest r capturing >=95% of the variance (the factorization rank)
 
 
 @dataclass
@@ -156,6 +157,10 @@ class EmbeddingTableDiff:
     frozen_score: np.ndarray
     geom_prev: GeomStats
     geom_cur: GeomStats
+    # energy fraction of cur's dominant (90%-energy) subspace captured by prev's -- 1.0 = the
+    # basis the table actually uses did not rotate; a drop is a representation-level change that
+    # per-id delta norms can miss (and null-space movement can't fake).
+    subspace_overlap: float = 1.0
     inserted_ids: np.ndarray | None = None
     evicted_ids: np.ndarray | None = None
     slot_moved_ids: np.ndarray | None = None

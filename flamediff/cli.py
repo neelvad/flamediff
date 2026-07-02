@@ -54,6 +54,24 @@ def report(
 
 
 @app.command()
+def rank(
+    run_dir: str = typer.Argument(..., help="A run directory containing ckpt_* checkpoints."),
+    json_out: bool = typer.Option(False, "--json", help="Emit JSON instead of text."),
+    table: str | None = typer.Option(None, "--table", help="Restrict to one embedding table."),
+) -> None:
+    """Low-rank structure over the run: rank-at-energy trajectories + factorization advisory."""
+    from flamediff import load_checkpoint
+    from flamediff.spectral import render_json, render_text, spectral_report
+
+    paths = sorted(glob.glob(f"{run_dir}/ckpt_*"))
+    if not paths:
+        typer.echo(f"no ckpt_* checkpoints under {run_dir!r}", err=True)
+        raise typer.Exit(2)
+    tables = spectral_report([load_checkpoint(p) for p in paths], table=table)
+    typer.echo(render_json(run_dir, tables) if json_out else render_text(run_dir, tables))
+
+
+@app.command()
 def watch(
     run_dir: str = typer.Argument(..., help="Run dir; new ckpt_* are picked up as they land."),
     interval: float = typer.Option(

@@ -30,6 +30,47 @@ def row_covariance_eigvals(W: torch.Tensor) -> torch.Tensor:
     return torch.linalg.eigvalsh(cov).clamp_min(0.0)
 
 
+def row_covariance_eig(W: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    """Eigenvalues (descending) and matching eigenvectors (columns) of the row covariance."""
+    dim = W.shape[1]
+    if W.shape[0] < 2:
+        return torch.zeros(dim), torch.eye(dim)
+    Wc = W - W.mean(dim=0, keepdim=True)
+    cov = (Wc.T @ Wc) / (W.shape[0] - 1)
+    vals, vecs = torch.linalg.eigh(cov)  # ascending
+    return vals.flip(0).clamp_min(0.0), vecs.flip(1)
+
+
+def rank_at_energy(spectrum_desc: torch.Tensor, energy: float = 0.95) -> int:
+    """Smallest r whose top-r eigenvalues capture >= `energy` of the total (0 for a zero spectrum).
+
+    The factorization-rank question directly: how small can a low-rank approximation be while
+    keeping `energy` of the table's variance."""
+    total = float(spectrum_desc.sum())
+    if total <= _EPS:
+        return 0
+    cum = torch.cumsum(spectrum_desc, 0) / total
+    return int(torch.searchsorted(cum, torch.tensor(energy - 1e-9)).item()) + 1
+
+
+def subspace_overlap(
+    eigvecs_prev: torch.Tensor, eigvals_cur: torch.Tensor, eigvecs_cur: torch.Tensor, r: int
+) -> float:
+    """Fraction of cur's top-r variance energy captured by prev's top-r eigenbasis, in [0, 1]
+    (1 = the dominant subspace did not move).
+
+    Energy-weighted, so it is robust to within-subspace rotation and eigenvalue ties, unlike raw
+    principal angles: v' C_cur v over prev's top-r directions equals sum_k lambda_k (v.u_k)^2,
+    so only the eigendecompositions are needed, never C_cur itself."""
+    r = max(1, min(int(r), eigvecs_prev.shape[1]))
+    den = float(eigvals_cur[:r].sum())
+    if den <= _EPS:
+        return 1.0
+    M = eigvecs_prev[:, :r].T @ eigvecs_cur  # [r, dim] cosines between the two bases
+    num = float(((M**2) * eigvals_cur.unsqueeze(0)).sum())
+    return min(1.0, num / den)
+
+
 def mean_row_norm(W: torch.Tensor) -> float:
     if W.shape[0] == 0:
         return 0.0
