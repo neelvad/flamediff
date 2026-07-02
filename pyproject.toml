@@ -63,4 +63,6 @@ select = ["E", "F", "I", "UP", "B"]
 extend-immutable-calls = ["typer.Option", "typer.Argument"]
 
 [tool.ruff.lint.per-file-ignores]
-"flamediff/_html.py" = ["E501"]  # embedded HTML/CSS/JS template; line length isn't meaningful
+# embedded HTML/CSS/JS templates; line length isn't meaningful
+"flamediff/_html.py" = ["E501"]
+"flamediff/_html_rank.py" = ["E501"]

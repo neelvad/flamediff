@@ -94,6 +94,31 @@ def test_spectral_report_tracks_rank_growth(make_table):
     assert d["rank_at_energy"]["0.95"] == r95
 
 
+def test_cli_rank_html_is_self_contained(write_ckpt, tmp_path):
+    import json
+    import re
+
+    g = torch.Generator().manual_seed(0)
+    base = torch.zeros(100, 16)
+    base[:, :3] = torch.randn(100, 3, generator=g)
+    for i in range(3):
+        write_ckpt(f"ckpt_{i:03d}",
+                   {"t": {"ids": np.arange(80), "slots": np.arange(80),
+                          "weight": base + 0.01 * i * torch.randn(100, 16, generator=g)}},
+                   step=i * 100)
+    out = tmp_path / "rank.html"
+    res = CliRunner().invoke(app, ["rank", str(tmp_path), "--html", str(out)])
+    assert res.exit_code == 0
+    html = out.read_text()
+    assert html.startswith("<!doctype html>")
+    assert "http://" not in html and "https://" not in html  # no external deps -> works offline
+    data = json.loads(re.search(r'application/json">(.*?)</script>', html, re.S)
+                      .group(1).replace("<\\/", "</"))
+    (t,) = data["tables"]
+    assert t["dim"] == 16 and len(t["rank_at_energy"]["0.95"]) == 3
+    assert t["rank_at_energy"]["0.95"][-1] <= 5              # the planted rank-3 structure
+
+
 @pytest.mark.integration
 def test_cli_rank_on_fixture():
     if len(glob.glob(f"{RUN}/ckpt_*")) < 2:

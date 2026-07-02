@@ -57,11 +57,13 @@ def report(
 def rank(
     run_dir: str = typer.Argument(..., help="A run directory containing ckpt_* checkpoints."),
     json_out: bool = typer.Option(False, "--json", help="Emit JSON instead of text."),
+    html_out: Path | None = typer.Option(
+        None, "--html", help="Also write a self-contained HTML rank viewer here."),
     table: str | None = typer.Option(None, "--table", help="Restrict to one embedding table."),
 ) -> None:
     """Low-rank structure over the run: rank-at-energy trajectories + factorization advisory."""
     from flamediff import load_checkpoint
-    from flamediff.spectral import render_json, render_text, spectral_report
+    from flamediff.spectral import render_html, render_json, render_text, spectral_report
 
     paths = sorted(glob.glob(f"{run_dir}/ckpt_*"))
     if not paths:
@@ -69,6 +71,9 @@ def rank(
         raise typer.Exit(2)
     tables = spectral_report([load_checkpoint(p) for p in paths], table=table)
     typer.echo(render_json(run_dir, tables) if json_out else render_text(run_dir, tables))
+    if html_out is not None:
+        html_out.write_text(render_html(run_dir, tables))
+        typer.echo(f"wrote {html_out}", err=True)
 
 
 @app.command()

@@ -152,5 +152,14 @@ def render_text(run: str, tables: list) -> str:
     return "\n".join(lines).rstrip("\n")
 
 
+def payload(run: str, tables: list) -> dict:
+    return {"run": run, "tables": [t.to_dict() for t in tables]}
+
+
 def render_json(run: str, tables: list) -> str:
-    return json.dumps({"run": run, "tables": [t.to_dict() for t in tables]}, indent=2)
+    return json.dumps(payload(run, tables), indent=2)
+
+
+def render_html(run: str, tables: list) -> str:
+    from flamediff._html_rank import render_rank_html
+    return render_rank_html(payload(run, tables))
