@@ -10,6 +10,12 @@ behavioral-probe research note (does cheap weight-diff predict behavioral drift?
 (`flamediff report --html`): trajectory sparklines with anomaly markers, ranked events, and
 drill-down into each event's *why*. Hover a chart for the checkpoint step + value.
 
+**▶ [Live rank demo](https://neelvad.github.io/flamediff/rank.html)** — the factorization-advisory
+view (`flamediff rank --html`): energy-at-rank curves and rank-at-energy trajectories, with the
+"safe to size a factorization yet?" call per table. Generated from a synthetic low-rank trajectory
+(`scripts/generate_rank_demo.py`; the [report demo](https://neelvad.github.io/flamediff/)'s run is
+near-full-rank, where the advisory would just — correctly — say there's nothing to compress).
+
 **Supported format (the one it reads today):** dynamic managed-collision embedding tables (recsys /
 TorchRec MCH-ZCH), from single-device `state_dict`s and sharded DCP checkpoints — the diff is an
 id-keyed join over checkpoints rather than a row-index subtract.
