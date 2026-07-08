@@ -87,7 +87,7 @@ class FlamediffTUI(App):
 
     def _dir_text(self, direction: str) -> Text:
         th = self.current_theme
-        return Text(direction, style=th.error if direction == "up" else th.accent)
+        return Text(direction, style=(th.error if direction == "up" else th.accent) or "")
 
     def _fill_table(self) -> None:
         table = self.query_one("#events", DataTable)

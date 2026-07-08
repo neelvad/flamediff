@@ -13,7 +13,7 @@ import os
 import numpy as np
 import torch
 
-from flamediff.types import Checkpoint, DenseTensor, InMemoryTable
+from flamediff.types import Checkpoint, DenseTensor, EmbeddingTable, InMemoryTable
 
 MCC_PREFIX = "_managed_collision_collection._managed_collision_modules."
 EMB_PREFIX = "_embedding_module.embeddings."
@@ -67,7 +67,7 @@ def assemble_checkpoint(sd: dict, path: str) -> Checkpoint:
         elif torch.is_tensor(value):
             leftover[key] = value
 
-    embedding_tables = {}
+    embedding_tables: dict[str, EmbeddingTable] = {}
     for table, bufs in mc_bufs.items():
         weight = emb_weights.pop(table, None)
         if weight is not None:

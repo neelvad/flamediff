@@ -35,7 +35,12 @@ flamediff = "flamediff.cli:main"
 flamediff-tui = "flamediff.tui:main"
 
 [dependency-groups]
-dev = ["pytest>=7", "ruff>=0.4", "textual>=0.60"]
+dev = [
+    "mypy>=1.10",
+    "pytest>=7",
+    "ruff>=0.4",
+    "textual>=0.60",
+]
 
 [tool.setuptools.packages.find]
 include = ["flamediff*"]
@@ -44,6 +49,15 @@ include = ["flamediff*"]
 # detect.py loads these FPR-calibrated thresholds at runtime; without this the wheel drops
 # the file and pip installs silently fall back to raw, uncalibrated detection.
 flamediff = ["calibration.json"]
+
+[tool.mypy]
+files = ["flamediff"]
+python_version = "3.12"
+
+[[tool.mypy.overrides]]
+# ruptures ships no type stubs / py.typed marker
+module = ["ruptures", "ruptures.*"]
+ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

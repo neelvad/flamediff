@@ -204,5 +204,5 @@ def detect_trajectory(traj: TrajectoryDiff, *, calibration=_DEFAULT_CALIBRATION,
             e.calibrated_severity = cs
             if cs >= 1.0:  # clears the FPR-calibrated bar
                 events.append(e)
-    events.sort(key=lambda e: -e.calibrated_severity)
+    events.sort(key=lambda e: -(e.calibrated_severity or 0.0))
     return DetectionResult(events=events, series=traj.series)

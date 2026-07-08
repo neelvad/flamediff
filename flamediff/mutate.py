@@ -71,7 +71,10 @@ def mutate_checkpoint(
     ckpt: Checkpoint, table_name: str, **kwargs
 ) -> tuple[Checkpoint, Mutation]:
     """Return a copy of ``ckpt`` with one embedding table mutated (see ``mutate_table``)."""
-    mutated_table, mutation = mutate_table(ckpt.embedding_tables[table_name], **kwargs)
+    table = ckpt.embedding_tables[table_name]
+    if not isinstance(table, InMemoryTable):
+        raise TypeError(f"mutation requires an in-memory table, got {type(table).__name__}")
+    mutated_table, mutation = mutate_table(table, **kwargs)
     tables = dict(ckpt.embedding_tables)
     tables[table_name] = mutated_table
     new = Checkpoint(

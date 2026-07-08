@@ -80,7 +80,7 @@ class Incident:
 
     @property
     def steps(self) -> list[int]:
-        return sorted({ee.event.step for ee in self.events})
+        return sorted({ee.event.step for ee in self.events if ee.event.step is not None})
 
     @property
     def tables(self) -> list[str]:

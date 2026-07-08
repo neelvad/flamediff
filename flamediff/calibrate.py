@@ -52,17 +52,17 @@ class NullResult:
 @dataclass
 class CalibrationResult:
     trials: list = field(default_factory=list)
-    null: NullResult = None
+    null: NullResult | None = None
 
     def operating_threshold(self, method: str, target_fpr: float) -> float:
-        rm = self.null.run_max.get(method, np.array([]))
+        rm = self.null.run_max.get(method, np.array([])) if self.null else np.array([])
         if rm.size == 0:
             return float("inf")
         return float(np.quantile(rm, 1.0 - target_fpr))
 
     def normalize(self, method: str, severity: float) -> float:
         """Right-tail p-value of a severity against the clean null pool."""
-        pool = self.null.pooled.get(method, np.array([]))
+        pool = self.null.pooled.get(method, np.array([])) if self.null else np.array([])
         if pool.size == 0:
             return 1.0
         return float(np.mean(pool >= severity))
@@ -172,8 +172,8 @@ def _loc_severity(events, indices: set, table: str) -> dict:
 
 
 def characterize_null(clean_trajectories, *, table: str = "emb") -> NullResult:
-    pooled = {m: [] for m in METHODS}
-    run_max = {m: [] for m in METHODS}
+    pooled: dict[str, list[float]] = {m: [] for m in METHODS}
+    run_max: dict[str, list[float]] = {m: [] for m in METHODS}
     for cks in clean_trajectories:
         events = _events_permissive(diff_trajectory(cks))
         per_run = {m: 0.0 for m in METHODS}
