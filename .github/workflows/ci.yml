@@ -1,0 +1,19 @@
+# Lint + typecheck + unit tests on every push/PR. Integration tests need generated
+# fixtures (see README "Reference fixtures") and are excluded here, same as release.yml.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync
+      - run: uv run ruff check .
+      - run: uv run mypy
+      - run: uv run pytest -q -m "not integration"
