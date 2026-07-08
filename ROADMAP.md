@@ -20,6 +20,10 @@ per milestone.
 
 ## Status (current)
 
+*(Naming note: the `v0.1` / `v1.0` / `v2.0` labels below are internal **milestone** names from the
+original plan, not package versions — the published package is versioned independently and is at
+**0.1.0 on PyPI**, which includes everything through the v2.0 milestone.)*
+
 **Shipped A→B→C and beyond.** v1.0 (sharded DCP read, zero-copy out-of-core `.distcp` mmap,
 streaming-gather diff, real-data calibration), an intrinsic **attribution "why"** (de-confounded
 global / popularity / idiosyncratic, injection-validated — this is what "B" became; the external
